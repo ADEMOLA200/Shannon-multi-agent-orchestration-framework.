@@ -25,6 +25,7 @@ class ProviderType(Enum):
     GROQ = "groq"
     MISTRAL = "mistral"
     XAI = "xai"
+    MINIMAX = "minimax"
 
 
 _PROVIDER_NAME_MAP: Dict[str, ProviderType] = {
@@ -38,6 +39,7 @@ _PROVIDER_NAME_MAP: Dict[str, ProviderType] = {
     "groq": ProviderType.GROQ,
     "mistral": ProviderType.MISTRAL,
     "xai": ProviderType.XAI,
+    "minimax": ProviderType.MINIMAX,
 }
 
 
