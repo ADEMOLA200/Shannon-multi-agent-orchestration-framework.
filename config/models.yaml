@@ -874,14 +874,6 @@ pricing:
     shannon-scraper:
       shannon_web_search:
         combined_per_1k: 0.002        # (7500/1000) × 0.002 = $0.015 (SerpAPI)
-      shannon_google_ads:
-        combined_per_1k: 0.002        # (7500/1000) × 0.002 = $0.015 (SerpAPI)
-      shannon_yahoo:
-        combined_per_1k: 0.000533     # (7500/1000) × 0.000533 ≈ $0.004 (SearchAPI.io)
-      shannon_meta:
-        combined_per_1k: 0.000533     # (7500/1000) × 0.000533 ≈ $0.004 (SearchAPI.io)
-      shannon_page_screenshot:
-        combined_per_1k: 0.002        # (500/1000) × 0.002 = $0.001 (Playwright + S3)
       shannon_firecrawl:
         combined_per_1k: 0.000133     # (7500/1000) × 0.000133 ≈ $0.001 (Firecrawl)
       shannon_web_fetch:

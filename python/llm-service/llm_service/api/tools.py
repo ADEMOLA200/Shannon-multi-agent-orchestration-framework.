@@ -31,24 +31,6 @@ from ..tools.builtin import (
     JsonQueryTool,
 )
 
-# Ads tools (enterprise version only - gracefully degrade if not present)
-try:
-    from ..tools.builtin import (
-        AdsSerpExtractTool,
-        AdsTransparencySearchTool,
-        AdsCompetitorDiscoverTool,
-        LPVisualAnalyzeTool,
-        LPBatchAnalyzeTool,
-        AdsCreativeAnalyzeTool,
-        YahooJPAdsDiscoverTool,
-        MetaAdLibrarySearchTool,
-        PageScreenshotTool,
-        AdsVideoAnalyzeTool,
-    )
-    _HAS_ADS_TOOLS = True
-except ImportError:
-    _HAS_ADS_TOOLS = False
-
 # Browser automation tool (requires playwright service)
 try:
     from ..tools.builtin import BrowserTool
@@ -360,21 +342,6 @@ async def startup_event():
         JsonQueryTool,
     ]
 
-    # Add ads tools if available (enterprise only)
-    if _HAS_ADS_TOOLS:
-        tools_to_register.extend([
-            AdsSerpExtractTool,
-            AdsTransparencySearchTool,
-            AdsCompetitorDiscoverTool,
-            LPVisualAnalyzeTool,
-            LPBatchAnalyzeTool,
-            AdsCreativeAnalyzeTool,
-            YahooJPAdsDiscoverTool,
-            MetaAdLibrarySearchTool,
-            PageScreenshotTool,
-            AdsVideoAnalyzeTool,
-        ])
-
     for tool_class in tools_to_register:
         try:
             registry.register(tool_class)
@@ -387,29 +354,6 @@ async def startup_event():
 
     # Load OpenAPI tools from config
     _load_openapi_tools_from_config()
-
-    # Load GA4 tools (optional registry wrappers)
-    try:
-        from ..tools.ga4_tools import (
-            GA4RunReportTool,
-            GA4RunRealtimeReportTool,
-            GA4GetMetadataTool,
-        )
-        registry.register(GA4RunReportTool, override=True)
-        registry.register(GA4RunRealtimeReportTool, override=True)
-        registry.register(GA4GetMetadataTool, override=True)
-        logger.info(
-            "Registered GA4 tools (ga4_run_report, ga4_run_realtime_report, ga4_get_metadata)"
-        )
-    except Exception as e:
-        logger.warning(f"GA4 tools not available: {e}")
-
-    # Load financial news tools (optional - requires API keys)
-    try:
-        from ..tools.vendor_adapters.financial import register_financial_tools
-        register_financial_tools(registry)
-    except Exception as e:
-        logger.warning(f"Financial tools not available: {e}")
 
     # Register browser automation tool if available
     if _HAS_BROWSER_TOOLS:
