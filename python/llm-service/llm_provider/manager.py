@@ -106,6 +106,10 @@ try:
     from .xai_provider import XAIProvider
 except Exception:  # pragma: no cover
     XAIProvider = None  # type: ignore
+try:
+    from .minimax_provider import MiniMaxProvider
+except Exception:  # pragma: no cover
+    MiniMaxProvider = None  # type: ignore
 
 
 class LLMManager:
@@ -260,6 +264,13 @@ class LLMManager:
                     "base_url": base_url,
                 }
 
+        if os.getenv("MINIMAX_API_KEY"):
+            config["providers"]["minimax"] = {
+                "type": "minimax",
+                "api_key": os.getenv("MINIMAX_API_KEY"),
+                "base_url": "https://api.minimax.io/v1",
+            }
+
         self._initialize_providers(config["providers"])
         self._configure_routing(config["routing"])
         self._configure_caching(config["caching"])
@@ -306,6 +317,11 @@ class LLMManager:
                         self.logger.warning("XAI provider unavailable (missing dependency)")
                         continue
                     provider = XAIProvider(config)
+                elif provider_type == "minimax":
+                    if MiniMaxProvider is None:
+                        self.logger.warning("MiniMax provider unavailable (missing dependency)")
+                        continue
+                    provider = MiniMaxProvider(config)
                 else:
                     self.logger.warning(f"Unknown provider type: {provider_type}")
                     continue
@@ -366,6 +382,7 @@ class LLMManager:
             "deepseek": ("openai_compatible", "DEEPSEEK_API_KEY"),
             "qwen": ("openai_compatible", "QWEN_API_KEY"),
             "ollama": ("openai_compatible", "OLLAMA_API_KEY"),
+            "minimax": ("minimax", "MINIMAX_API_KEY"),
             # Others exist in config but not yet implemented here: mistral/meta/cohere/bedrock
         }
 
