@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-03
+
+### Added
+- OAuth2 authentication with Google provider, JWT tokens, and API key management
+- Attachments and multimodal support — image/file uploads through gateway, OpenAI-compatible content blocks, Python attachment handling
+- Agent workflow — dedicated single-agent execution path with tool calling
+- BrowserUse strategy — browser automation as a first-class execution strategy
+- DomainAnalysis strategy — structured domain research with multi-source analysis
+- Daemon approval routing — human-in-the-loop approval dispatch through WebSocket daemon
+- Daemon dispatch for scheduled tasks — scheduled task results routed through daemon channels
+- Workspace quotas — per-tenant retention and size limits (migration 012)
+- Playwright SSRF protection — hostname validation and private IP blocking
+- Firecracker executor rewrite — guest-agent, VM pool, vsock communication, workspace sync
+- Gateway endpoints — `/api/v1/agents`, `/api/v1/llm-models`, `/api/v1/memory/files`
+- Rate limits configuration — externalized to `config/rate_limits.yaml` (was inline)
+- MiniMax as first-class LLM provider (dedicated provider, not OpenAI-compatible shim)
+- Kimi (Moonshot AI) provider support
+- Python SDK (`pip install shannon-ai`) with streaming, sessions, and workflow routing
+- Desktop app (Tauri v2) with real-time execution timeline and research visualization
+- Release tooling — one-command installer, Docker Hub multi-arch images, CI/CD workflows
+- Prompt cache optimization for Anthropic models (1h TTL, multi-turn support)
+- Cache token tracking in `token_usage` and `task_executions` tables (migration 112)
+- Performance indexes for large tables (migration 118)
+- Per-LLM-call sequence tracking for cache behavior analysis (migration 120)
+
+### Fixed
+- DeepSeek model aliases updated to official API IDs (`deepseek-chat`, `deepseek-reasoner`)
+- Auth API key validation no longer references non-existent `tier` / `rate_limit_override` columns
+
+### Changed
+- Consolidated platform release — clean codebase derived from Shannon Cloud with all enterprise features removed
+- History replaces prior git history (previous state preserved at tag `v0.3.1-legacy`)
+
 ## [0.3.1] - 2026-03-17
 
 ### Added
