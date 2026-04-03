@@ -1,33 +1,139 @@
-# Shannon — Multi-Agent AI Platform
+# Shannon — Production AI Agents That Actually Work
 
-Shannon is an open-source, enterprise-grade multi-agent AI platform that combines **Rust** (enforcement gateway), **Go** (orchestration with Temporal), and **Python** (LLM services) into a token-efficient, distributed AI system.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Documentation](https://img.shields.io/badge/docs-shannon.run-blue.svg)](https://docs.shannon.run)
+[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-waylandzhang%2Fshannon-blue.svg)](https://hub.docker.com/u/waylandzhang)
+[![Go Version](https://img.shields.io/badge/Go-1.24%2B-blue.svg)](https://golang.org/)
+[![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+Ship reliable AI agents to production. Multi-strategy orchestration, swarm collaboration, token budget control, human approval workflows, and time-travel debugging — all built in. **<a href="https://shannon.run" target="_blank">Live Demo</a>**
 
 <div align="center">
 
-![Shannon Architecture](docs/images/architecture-cloud.png)
+![Shannon Desktop App](docs/images/desktop-demo.gif)
+
+*View real-time agent execution and event streams*
 
 </div>
 
-## Platform Architecture
+<div align="center">
+
+![Shannon Architecture](docs/images/architecture-oss.png)
+
+*Multi-agent orchestration with execution strategies, WASI sandboxing, and built-in observability*
+
+</div>
+
+## Why Shannon?
+
+| The Problem | Shannon's Solution |
+|---|---|
+| *Agents fail silently?* | Temporal workflows with time-travel debugging — replay any execution step-by-step |
+| *Costs spiral out of control?* | Hard token budgets per task/agent with automatic model fallback |
+| *No visibility into what happened?* | Real-time event streaming, Prometheus metrics, OpenTelemetry tracing |
+| *Security concerns?* | WASI sandbox for code execution, OPA policies, multi-tenant isolation |
+| *Vendor lock-in?* | Works with OpenAI, Anthropic, Google, DeepSeek, xAI, local models via Ollama |
+
+## Quick Start
+
+### Prerequisites
+
+- Docker and Docker Compose
+- An API key for at least one LLM provider (OpenAI, Anthropic, etc.)
+
+### One-Command Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Kocoro-lab/Shannon/main/scripts/install.sh | bash
+```
+
+This downloads config, prompts for API keys, pulls Docker images, and starts services.
+
+**Required API Keys** (choose one):
+- OpenAI: `OPENAI_API_KEY=sk-...`
+- Anthropic: `ANTHROPIC_API_KEY=sk-ant-...`
+- Or any OpenAI-compatible endpoint
+
+**Optional but recommended:**
+- Web Search: `SERPAPI_API_KEY=...` ([serpapi.com](https://serpapi.com))
+- Web Fetch: `FIRECRAWL_API_KEY=...` ([firecrawl.dev](https://firecrawl.dev))
+
+> **Building from source?** See [Development](#development) below.
+>
+> **Platform-specific guides:** [Ubuntu](docs/ubuntu-quickstart.md) | [Rocky Linux](docs/rocky-linux-quickstart.md) | [Windows](docs/windows-setup-guide-en.md) | [Windows (中文)](docs/windows-setup-guide-cn.md)
+
+### Your First Agent
+
+Shannon provides multiple ways to interact with AI agents:
+
+#### REST API
+
+```bash
+# Submit a task
+curl -X POST http://localhost:8080/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is the capital of France?", "session_id": "demo"}'
+
+# Stream events in real-time
+curl -N "http://localhost:8080/api/v1/stream/sse?workflow_id=<task_id>"
+```
+
+#### Python SDK
+
+```bash
+pip install shannon-sdk
+```
+
+```python
+from shannon import ShannonClient
+
+with ShannonClient(base_url="http://localhost:8080") as client:
+    handle = client.submit_task("What is the capital of France?", session_id="demo")
+    result = client.wait(handle.task_id)
+    print(result.result)
+```
+
+See [Python SDK Documentation](https://pypi.org/project/shannon-sdk/).
+
+#### OpenAI-Compatible API
+
+```bash
+# Drop-in replacement for OpenAI API
+export OPENAI_API_BASE=http://localhost:8080/v1
+# Your existing OpenAI code works unchanged
+```
+
+#### Desktop App
+
+Download from [GitHub Releases](https://github.com/Kocoro-lab/Shannon/releases/latest) (macOS, Windows, Linux), or build from source:
+
+```bash
+cd desktop && npm install && npm run tauri:build
+```
+
+See [Desktop App Guide](desktop/README.md).
+
+## Architecture
 
 ```
 Client --> Gateway (Go) --> Orchestrator (Go) --> Agent Core (Rust) --> LLM Service (Python) --> Providers
              |                    |                      |                      |
              | Auth/Rate limit    | Temporal workflows    | WASI sandbox         | Tool execution
-             | Quota enforcement  | Budget management     | Token enforcement    | Agent loop
+             |                    | Budget management     | Token enforcement    | Agent loop
              |                    | Complexity routing    | Circuit breaker      | Context management
              v                    v                       v                      v
-           PostgreSQL          Temporal               Redis/Qdrant           Tool Adapters
+           PostgreSQL          Temporal                 Redis              Tool Adapters
 ```
 
 ### Core Services
 
 | Service | Language | Port | Role |
 |---------|----------|------|------|
-| **Gateway** | Go | 8080 | REST API, auth (JWT/API key), rate limiting, quota enforcement |
-| **Orchestrator** | Go | 50052 | Temporal workflows, task decomposition, budget management, complexity routing |
-| **Agent Core** | Rust | 50051 | Enforcement gateway, WASI sandbox, token counting, circuit breaker |
-| **LLM Service** | Python | 8000 | Provider abstraction (Anthropic, OpenAI, Google, DeepSeek), MCP tools, agent loop |
+| **Gateway** | Go | 8080 | REST API, auth (JWT/API key), rate limiting |
+| **Orchestrator** | Go | 50052 | Temporal workflows, task decomposition, budget management |
+| **Agent Core** | Rust | 50051 | Enforcement gateway, WASI sandbox, token counting |
+| **LLM Service** | Python | 8000 | Provider abstraction, MCP tools, agent loop |
 | **Playwright** | Python | 8002 | Browser automation for web scraping |
 
 ### Execution Strategies
@@ -42,90 +148,99 @@ Tasks are automatically routed based on complexity:
 | **Research** | Multi-step research | Tiered models for cost optimization (50-70% reduction) |
 | **Swarm** | Autonomous teams | Lead-orchestrated multi-agent with convergence detection |
 
-### Data Layer
+## Core Capabilities
 
-| Component | Purpose |
-|-----------|---------|
-| **PostgreSQL** | Task executions, sessions, user data |
-| **Redis** | Session cache, rate limiting, event pubsub |
-| **Qdrant** | Vector memory, semantic search |
-| **Temporal** | Workflow state, deterministic replay |
-
-## Quick Start
-
+### Research Workflows
 ```bash
-make setup-env          # Create .env from template
-vim .env                # Add API keys (OPENAI_API_KEY or ANTHROPIC_API_KEY)
-make dev                # Start all services via Docker Compose
-make smoke              # Run E2E smoke tests
+curl -X POST http://localhost:8080/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Compare renewable energy adoption in EU vs US",
+    "context": {"force_research": true, "research_strategy": "deep"}
+  }'
 ```
 
-### Essential Commands
-
+### Swarm Multi-Agent
 ```bash
-make dev                # Start all services
-make smoke              # Run E2E smoke tests
-make proto              # Regenerate protobuf files
-make ci                 # Run CI checks
-make logs               # View service logs
+curl -X POST http://localhost:8080/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Analyze this dataset from multiple perspectives",
+    "context": {"force_swarm": true}
+  }'
 ```
 
-### Testing
-
+### Skills System
 ```bash
-# Submit a test task
-./scripts/submit_task.sh "Your query here"
-
-# Run service-specific tests
-cd rust/agent-core && cargo test
-cd go/orchestrator && go test -race ./...
-cd python/llm-service && python3 -m pytest
+curl http://localhost:8080/api/v1/skills           # List skills
+curl -X POST http://localhost:8080/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Review the auth module", "skill": "code-review", "session_id": "review-123"}'
 ```
+
+Create custom skills in `config/skills/user/`. See [Skills System](docs/skills-system.md).
+
+### Human-in-the-Loop Approval
+```bash
+curl -X POST http://localhost:8080/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Update the database schema", "context": {"require_approval": true}}'
+```
+
+### Session Continuity
+```bash
+curl -X POST http://localhost:8080/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is GDP?", "session_id": "econ-101"}'
+# Follow-up remembers context
+curl -X POST http://localhost:8080/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"query": "How does it relate to inflation?", "session_id": "econ-101"}'
+```
+
+### Scheduled Tasks
+```bash
+curl -X POST http://localhost:8080/api/v1/schedules \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Daily Analysis", "cron_expression": "0 9 * * *", "task_query": "Analyze market trends"}'
+```
+
+### Token Budget Control
+```bash
+curl -X POST http://localhost:8080/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Generate a market report",
+    "config": {"budget": {"max_tokens": 5000, "fallback_model": "gpt-5-mini"}}
+  }'
+```
+
+### Time-Travel Debugging
+```bash
+./scripts/replay_workflow.sh task-prod-failure-123
+```
+
+### 10+ LLM Providers
+- **Anthropic**: Claude Opus 4.6, Sonnet 4.6, Haiku 4.5
+- **OpenAI**: GPT-5.1, GPT-5 mini, GPT-5 nano
+- **Google**: Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 3 Pro Preview
+- **xAI**: Grok 4 (reasoning & non-reasoning)
+- **DeepSeek**: DeepSeek Chat, DeepSeek Reasoner
+- **MiniMax**: M2.7, M2.7-highspeed
+- **Others**: Qwen, Meta (Llama 4), Zhipu (GLM), Kimi
+- **Local**: Ollama, LM Studio, vLLM — any OpenAI-compatible endpoint
+- Automatic failover between providers
 
 ## API Endpoints
 
-Shannon exposes 4 API entry points:
-
 | Endpoint | Orchestrator? | Format | Use Case |
 |----------|:---:|--------|----------|
-| `POST /v1/chat/completions` | Yes | OpenAI-compatible | Apps using OpenAI SDK -- auto tool selection, deep research, swarm, strategies |
-| `POST /v1/completions` | No (proxy) | OpenAI-compatible | Thin LLM proxy -- single call, no orchestration, caller-supplied tools only |
-| `POST /api/v1/tasks` | Yes | Shannon native (sync) | Full orchestrator pipeline, sync response |
-| `POST /api/v1/tasks/stream` | Yes | Shannon native (SSE) | Full orchestrator pipeline, streaming SSE events |
+| `POST /v1/chat/completions` | Yes | OpenAI-compatible | Apps using OpenAI SDK |
+| `POST /v1/completions` | No (proxy) | OpenAI-compatible | Thin LLM proxy |
+| `POST /api/v1/tasks` | Yes | Shannon native (sync) | Full orchestrator pipeline |
+| `POST /api/v1/tasks/stream` | Yes | Shannon native (SSE) | Streaming orchestration |
 
-`/v1/chat/completions` supports Shannon-specific routing via `shannon_options`:
-```json
-{
-  "model": "...",
-  "messages": [...],
-  "stream": true,
-  "shannon_options": {
-    "context": {"force_research": true},
-    "research_strategy": "deep"
-  }
-}
-```
-
-### Tool Execution API
-
-Direct tool execution without full task orchestration:
-- `GET /api/v1/tools` -- List available tool schemas
-- `GET /api/v1/tools/{name}` -- Get tool metadata + parameter schema
-- `POST /api/v1/tools/{name}/execute` -- Execute a tool directly
-
-### Skip Auth (Local Development)
-
-```bash
-# 1. .env
-GATEWAY_SKIP_AUTH=1
-
-# 2. config/shannon.yaml
-auth:
-  skip_auth: true
-
-# Restart services after changes
-docker compose -f deploy/compose/docker-compose.yml restart gateway orchestrator
-```
+**Tool Execution:** `GET /api/v1/tools`, `POST /api/v1/tools/{name}/execute`
 
 ## Project Structure
 
@@ -136,9 +251,11 @@ shannon/
 │   └── internal/             # Workflows, strategies, activities
 ├── rust/agent-core/          # Enforcement gateway, WASI sandbox
 ├── python/llm-service/       # LLM providers, MCP tools, agent loop
+├── desktop/                  # Tauri + Next.js desktop application
+├── clients/python/           # Python SDK
 ├── protos/                   # Shared protobuf definitions
 ├── config/                   # YAML configuration files
-├── deploy/compose/           # Docker Compose for local dev
+├── deploy/compose/           # Docker Compose for local dev + release
 ├── migrations/               # PostgreSQL schema migrations
 ├── scripts/                  # Automation and helper scripts
 └── docs/                     # Architecture and API documentation
@@ -148,7 +265,7 @@ shannon/
 
 | File | Purpose |
 |------|---------|
-| `.env` | API keys, runtime settings (highest priority) |
+| `.env` | API keys, runtime settings |
 | `config/shannon.yaml` | Feature flags, auth, tracing |
 | `config/models.yaml` | LLM providers, pricing, capabilities |
 | `config/features.yaml` | Workflow settings, execution modes |
@@ -159,25 +276,99 @@ shannon/
 | Service | Port | Protocol |
 |---------|------|----------|
 | Gateway | 8080 | HTTP |
-| Orchestrator | 50052 (gRPC), 8081 (health), 2112 (metrics) | gRPC/HTTP |
-| Agent Core | 50051 (gRPC), 2113 (metrics) | gRPC |
+| Orchestrator | 50052 (gRPC), 8081 (health) | gRPC/HTTP |
+| Agent Core | 50051 | gRPC |
 | LLM Service | 8000 | HTTP |
 | Temporal | 7233 (gRPC), 8088 (UI) | gRPC/HTTP |
 | PostgreSQL | 5432 | TCP |
 | Redis | 6379 | TCP |
-| Qdrant | 6333 | HTTP |
+
+## Development
+
+### Building from Source
+
+```bash
+git clone https://github.com/Kocoro-lab/Shannon.git
+cd Shannon
+make setup-env                          # Create .env from template
+vim .env                                # Add your API key
+./scripts/setup_python_wasi.sh          # Download Python WASI interpreter
+make dev                                # Start all services
+make smoke                              # Run E2E smoke tests
+```
+
+### Development Commands
+
+```bash
+make dev      # Start all services
+make smoke    # E2E smoke tests
+make ci       # Full CI suite
+make proto    # Regenerate protobuf files
+make lint     # Run linters
+make logs     # View service logs
+make down     # Stop all services
+```
+
+### Using Pre-built Images
+
+```bash
+cd Shannon
+cp .env.example .env && vim .env
+docker compose -f deploy/compose/docker-compose.release.yml up -d
+```
+
+## Troubleshooting
+
+### Health Checks
+
+```bash
+docker compose -f deploy/compose/docker-compose.yml ps
+curl http://localhost:8080/health
+curl http://localhost:8081/health
+```
+
+### Common Issues
+
+**Services not starting:**
+- Check `.env` has required API keys
+- Ensure ports 8080, 8081, 50052 are not in use
+- Run `docker compose down && docker compose up -d` to recreate
+
+**Task execution fails:**
+- Verify LLM API key is valid
+- Check orchestrator logs: `docker compose logs -f orchestrator`
+
+**Out of memory:**
+- Reduce `WASI_MEMORY_LIMIT_MB` (default: 512)
+- Lower `HISTORY_WINDOW_MESSAGES` (default: 50)
 
 ## Documentation
 
-- [Multi-Agent Workflow Architecture](docs/multi-agent-workflow-architecture.md)
-- [Streaming APIs](docs/streaming-api.md)
-- [Pattern Usage Guide](docs/pattern-usage-guide.md)
-- [Skills System](docs/skills-system.md)
-- [Session Workspaces](docs/session-workspaces.md)
-- [Extending Shannon](docs/extending-shannon.md)
-- [Adding Custom Tools](docs/adding-custom-tools.md)
-- [Swarm Agents](docs/swarm-agents.md)
+| Resource | Description |
+|----------|-------------|
+| [Official Docs](https://docs.shannon.run) | Full documentation site |
+| [Architecture](docs/multi-agent-workflow-architecture.md) | System design deep-dive |
+| [Streaming APIs](docs/streaming-api.md) | SSE and WebSocket streaming |
+| [Skills System](docs/skills-system.md) | Custom skill development |
+| [Session Workspaces](docs/session-workspaces.md) | WASI sandbox guide |
+| [Extending Shannon](docs/extending-shannon.md) | Custom tools and templates |
+| [Swarm Agents](docs/swarm-agents.md) | Multi-agent collaboration |
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+- [Open an issue](https://github.com/Kocoro-lab/Shannon/issues)
+- [View roadmap](ROADMAP.md)
 
 ## License
 
-[MIT License](LICENSE)
+MIT License — Use it anywhere, modify anything. See [LICENSE](LICENSE).
+
+---
+
+<p align="center">
+  <b>Stop debugging AI failures. Start shipping reliable agents.</b><br><br>
+  <a href="https://github.com/Kocoro-lab/Shannon">GitHub</a> ·
+  <a href="https://docs.shannon.run">Docs</a>
+</p>
