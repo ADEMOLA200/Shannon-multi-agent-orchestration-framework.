@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-04-04
+
+### Fixed
+- Gateway auth bypass failing when `.env` values contain trailing whitespace — `GATEWAY_SKIP_AUTH=1` with `ENVIRONMENT=dev` now works reliably
+- Proto generation (`make setup`) failing on macOS/Linux with Python 3.12+ due to PEP 668 externally-managed-environment — now uses a dedicated venv
+
 ## [0.4.0] - 2026-04-03
 
 ### Added
