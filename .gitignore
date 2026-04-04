@@ -327,7 +327,6 @@ deploy/k8s/secrets/
 
 # Claude AI development files
 AGENTS.md
-CLAUDE.md
 CLAUDE.local.md
 
 # Historical/archived documentation
@@ -355,7 +354,6 @@ chrome-extension/
 # Skills - exclude user and vendor-specific skills
 config/skills/user/
 config/skills/vendor/
-CLAUDE.md
 
 # GitNexus
 .gitnexus
