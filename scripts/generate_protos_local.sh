@@ -28,18 +28,19 @@ if ! command -v protoc-gen-go &> /dev/null; then
     go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 fi
 
-# Ensure Python grpc tools are installed with correct protobuf version
-if ! python3 -c "import grpc_tools" 2>/dev/null; then
-    echo "Installing Python gRPC tools with protobuf 5.29.2..."
-    pip3 install grpcio-tools==1.68.1 protobuf==5.29.2
-else
-    # Check protobuf version
-    PROTOBUF_VERSION=$(python3 -c "import google.protobuf; print(google.protobuf.__version__)" 2>/dev/null || echo "unknown")
-    if [[ ! "$PROTOBUF_VERSION" =~ ^5\. ]]; then
-        echo "Warning: Protobuf version $PROTOBUF_VERSION detected, expected 5.x"
-        echo "Installing correct version..."
-        pip3 install --upgrade protobuf==5.29.2 grpcio-tools==1.68.1
-    fi
+# Use a venv to avoid PEP 668 "externally-managed-environment" errors
+VENV_DIR=".venv-proto"
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Creating proto generation venv..."
+    python3 -m venv "$VENV_DIR"
+fi
+source "$VENV_DIR/bin/activate"
+
+# Ensure correct protobuf 5.x + grpc tools in the venv
+PROTOBUF_VERSION=$(python3 -c "import google.protobuf; print(google.protobuf.__version__)" 2>/dev/null || echo "none")
+if [[ ! "$PROTOBUF_VERSION" =~ ^5\. ]]; then
+    echo "Installing protobuf 5.29.2 + grpcio-tools in venv..."
+    pip3 install --quiet protobuf==5.29.2 grpcio-tools==1.68.1
 fi
 
 cd protos
