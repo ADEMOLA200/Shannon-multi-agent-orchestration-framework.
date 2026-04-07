@@ -933,8 +933,11 @@ model_capabilities:
     - glm-5  # 200K tokens
 
 # Rate limiting configuration
+# Per-provider RPM is disabled by default (0). The gateway layer handles
+# per-user rate limiting. Only set default_rpm > 0 if you need a global
+# backend safety net across all providers.
 rate_limits:
-  default_rpm: 60
+  default_rpm: 0
   default_tpm: 100000
   tier_overrides:
     small:

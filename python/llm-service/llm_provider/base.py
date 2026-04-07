@@ -928,6 +928,12 @@ class RateLimiter:
 
             now = time.time()
 
+            # rpm=0 means unlimited — skip RPM tracking entirely
+            if self.requests_per_minute <= 0:
+                if self._semaphore:
+                    asyncio.get_running_loop().call_later(15.0, self._safe_release)
+                return
+
             # Remove old requests outside the window
             self.requests = [r for r in self.requests if now - r < 60]
 

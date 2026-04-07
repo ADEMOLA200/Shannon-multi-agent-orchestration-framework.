@@ -331,10 +331,11 @@ class LLMManager:
                     name, provider, is_default=(name == config.get("default"))
                 )
 
-                # Initialize rate limiter for provider
-                rpm = config.get("requests_per_minute", 60)
+                # Initialize rate limiter for provider (0 = disabled, rely on gateway layer)
+                rpm = int(config.get("requests_per_minute", 0) or 0)
                 max_conc = int(config.get("max_concurrent", 0) or 0)
-                self.rate_limiters[name] = RateLimiter(rpm, max_concurrent=max_conc)
+                if rpm > 0 or max_conc > 0:
+                    self.rate_limiters[name] = RateLimiter(rpm, max_concurrent=max_conc)
 
                 self.logger.info(f"Initialized provider: {name}")
                 # Initialize circuit breaker for provider
@@ -473,10 +474,12 @@ class LLMManager:
             "max_size": 1000,
         }
 
-        # Rate limits (optional): apply a default RPM from YAML if present
-        default_rpm = int(rate_limits.get("default_rpm", 60) or 60)
-        for name, pcfg in providers_cfg.items():
-            pcfg.setdefault("requests_per_minute", default_rpm)
+        # Rate limits (optional): apply per-provider RPM only if explicitly configured.
+        # default_rpm=0 means disabled — rely on gateway layer for user-facing rate limits.
+        default_rpm = int(rate_limits.get("default_rpm", 0) or 0)
+        if default_rpm > 0:
+            for name, pcfg in providers_cfg.items():
+                pcfg.setdefault("requests_per_minute", default_rpm)
 
         return providers_cfg, routing_cfg, caching_cfg
 
