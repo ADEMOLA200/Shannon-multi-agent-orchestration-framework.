@@ -29,12 +29,8 @@ class TestMultiTurnCacheBreakpoints:
         return AnthropicProvider(_MINIMAL_CONFIG)
 
     def test_multi_turn_no_per_message_cache_control(self):
-        """Multi-turn messages should NOT have per-message cache_control.
-
-        Top-level automatic caching (extra_body) handles growing-prefix caching.
-        Per-message breakpoints on the last assistant would move each iteration,
-        creating new cache entries instead of reading old ones.
-        """
+        """Rolling cache_control marker lands on the penultimate message's last block;
+        all other messages stay as plain strings."""
         provider = self._make_provider()
         messages = [
             {"role": "system", "content": "You are helpful."},
@@ -49,10 +45,17 @@ class TestMultiTurnCacheBreakpoints:
         assert system_msg == "You are helpful."
         assert len(claude_msgs) == 5
 
-        # No assistant message should have cache_control (handled by top-level automatic caching)
-        for msg in claude_msgs:
-            if msg["role"] == "assistant":
-                assert isinstance(msg["content"], str), "Assistant content should be plain string, no cache_control blocks"
+        # Rolling cache_control lands on claude_msgs[-2]; all others stay plain strings.
+        penultimate_idx = len(claude_msgs) - 2
+        for i, msg in enumerate(claude_msgs):
+            if i == penultimate_idx:
+                # Rolling marker target — content promoted to list with cache_control
+                assert isinstance(msg["content"], list), \
+                    f"penultimate msg content should be list, got {type(msg['content'])}"
+            else:
+                if msg["role"] == "assistant":
+                    assert isinstance(msg["content"], str), \
+                        f"non-penultimate assistant content should remain plain string, got {msg['content']!r}"
 
     def test_system_message_always_gets_cache_control(self):
         """System message gets cache_control in _build_api_request."""
@@ -129,7 +132,7 @@ class TestMultiTurnCacheBreakpoints:
         user_msg = claude_msgs[0]
         assert isinstance(user_msg["content"], list)
         assert user_msg["content"][0]["text"] == "Stable context\n"
-        assert user_msg["content"][0]["cache_control"] == {"type": "ephemeral"}
+        assert user_msg["content"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
         assert user_msg["content"][1]["text"] == "\nVolatile"
 
 
@@ -512,3 +515,87 @@ class TestStreamingCacheAccounting:
         assert cache_read == 500
         assert cache_creation == 1200
         assert cache_creation_1h == 800
+
+
+class TestRollingMessageBreakpoint:
+    """Verify rolling cache_control marker on claude_messages[-2]."""
+
+    def _make_provider(self):
+        return AnthropicProvider(_MINIMAL_CONFIG)
+
+    def test_single_message_no_rolling_marker(self):
+        """Turn 1: only one message -> no rolling marker beyond existing cache_break."""
+        provider = self._make_provider()
+        messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "stable<!-- cache_break -->volatile"},
+        ]
+        _, claude_msgs = provider._convert_messages_to_claude_format(messages)
+        # Only one user message; no [-2] index exists beyond the sole message
+        assert len(claude_msgs) == 1
+        # User message retains cache_break split (existing behavior)
+        assert isinstance(claude_msgs[0]["content"], list)
+        assert claude_msgs[0]["content"][0].get("cache_control") is not None
+
+    def test_multi_turn_rolling_marker_on_penultimate(self):
+        """Turn 2+: penultimate completed message gets cache_control on its last block."""
+        provider = self._make_provider()
+        messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "assistant_reply_1"},
+            {"role": "user", "content": "follow_up"},
+        ]
+        _, claude_msgs = provider._convert_messages_to_claude_format(messages)
+        assert len(claude_msgs) == 3
+        # Penultimate is the assistant reply
+        penultimate = claude_msgs[-2]
+        assert penultimate["role"] == "assistant"
+        # Its content must be promoted to a list with cache_control on the last block
+        assert isinstance(penultimate["content"], list), \
+            f"expected list content, got {type(penultimate['content'])}"
+        last_block = penultimate["content"][-1]
+        assert last_block.get("cache_control") == {"type": "ephemeral", "ttl": "1h"}
+
+    def test_rolling_marker_skips_when_already_marked(self):
+        """If penultimate already has cache_control (e.g. user_1 with cache_break marker),
+        do not add another — respect the 4-breakpoint cap."""
+        provider = self._make_provider()
+        messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "stable<!-- cache_break -->volatile1"},
+            {"role": "assistant", "content": "reply"},
+        ]
+        _, claude_msgs = provider._convert_messages_to_claude_format(messages)
+        assert len(claude_msgs) == 2
+        penultimate = claude_msgs[-2]
+        # Penultimate is user_1 with cache_break; already has cache_control on its stable block.
+        # Rolling should NOT add another on the volatile block.
+        assert isinstance(penultimate["content"], list)
+        cc_count = sum(
+            1 for b in penultimate["content"]
+            if isinstance(b, dict) and b.get("cache_control")
+        )
+        assert cc_count == 1, f"expected exactly 1 cache_control on penultimate, got {cc_count}"
+
+    def test_rolling_marker_on_tool_result(self):
+        """Agent loop: tool_result message gets the rolling marker on its last block."""
+        provider = self._make_provider()
+        messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "q"},
+            {"role": "assistant", "content": [
+                {"type": "text", "text": "calling tool"},
+                {"type": "tool_use", "id": "t1", "name": "x", "input": {}},
+            ]},
+            {"role": "tool", "tool_call_id": "t1", "content": "tool result"},
+            {"role": "user", "content": "follow up"},
+        ]
+        _, claude_msgs = provider._convert_messages_to_claude_format(messages)
+        # Penultimate is whatever came just before the final user message.
+        # The "tool" role gets converted into a user message with tool_result content;
+        # the final user "follow up" is the last message, so penultimate = the tool_result user message.
+        penultimate = claude_msgs[-2]
+        assert isinstance(penultimate["content"], list)
+        # The rolling marker sits on the LAST block of penultimate, regardless of block type.
+        assert penultimate["content"][-1].get("cache_control") is not None

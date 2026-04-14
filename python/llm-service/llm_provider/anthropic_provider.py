@@ -287,10 +287,32 @@ class AnthropicProvider(LLMProvider):
                     {"role": "user", "content": f"Function result: {content}"}
                 )
 
-        # NOTE: Previously added cache_control to last assistant message (explicit
-        # breakpoint). Removed because the breakpoint MOVES each iteration, causing
-        # new cache creation every turn and zero cache reads. Caching is now handled
-        # by explicit system message breakpoint (line ~238) only.
+        # Rolling message-level cache_control: attach to the last block of the
+        # penultimate message. This mirrors Claude Code's per-turn advancing
+        # breakpoint (claude-code-source/src/services/api/claude.ts:3078-3106).
+        # We use length-2 instead of length-1 because ShanClaw packs volatile
+        # context (date, memory, CWD) into the current turn's last user
+        # message; -2 is the last fully-stable turn boundary.
+        #
+        # De-duplication: if the target message already has cache_control on
+        # any block (e.g. user_1 with cache_break marker), skip to respect the
+        # Anthropic 4-breakpoint cap (system + tools + user_stable + rolling).
+        if len(claude_messages) >= 2:
+            target = claude_messages[-2]
+            content = target["content"]
+            if isinstance(content, str):
+                # Promote to blocks so we can attach cache_control
+                target["content"] = [
+                    {"type": "text", "text": content, "cache_control": CACHE_TTL_LONG},
+                ]
+            elif isinstance(content, list) and content:
+                already_marked = any(
+                    isinstance(b, dict) and b.get("cache_control") for b in content
+                )
+                if not already_marked:
+                    last_block = content[-1]
+                    if isinstance(last_block, dict):
+                        last_block["cache_control"] = CACHE_TTL_LONG
 
         return system_message, claude_messages
 
