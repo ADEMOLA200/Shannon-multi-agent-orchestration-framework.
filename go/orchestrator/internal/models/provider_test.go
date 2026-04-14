@@ -37,10 +37,9 @@ func TestDetectProvider(t *testing.T) {
 		{"Qwen Instruct", "qwen3-4b-instruct-2507", "qwen"},
 
 		// X.AI models
-		{"XAI Grok 3 Mini", "grok-3-mini", "xai"},
-		{"XAI Grok Beta", "grok-beta", "xai"},
-		{"XAI Grok 4 Fast Non-Reasoning", "grok-4-fast-non-reasoning", "xai"},
-		{"XAI Grok 4 Fast Reasoning", "grok-4-fast-reasoning", "xai"},
+		{"XAI Grok 4.1 Fast Non-Reasoning", "grok-4-1-fast-non-reasoning", "xai"},
+		{"XAI Grok 4.1 Fast Reasoning", "grok-4-1-fast-reasoning", "xai"},
+		{"XAI Grok 4.20 Reasoning", "grok-4.20-0309-reasoning", "xai"},
 
 		// Llama/Meta models - should map to "ollama" (local deployment)
 		{"Llama 3.2", "llama-3.2-3b", "ollama"},

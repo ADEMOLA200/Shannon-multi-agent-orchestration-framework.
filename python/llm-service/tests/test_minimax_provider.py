@@ -5,6 +5,8 @@ Unit tests run without external dependencies by mocking the OpenAI client.
 Integration tests are skipped unless MINIMAX_API_KEY is set in the environment.
 """
 
+from __future__ import annotations  # PEP 604 `X | None` syntax on Python 3.9
+
 import asyncio
 import os
 import sys

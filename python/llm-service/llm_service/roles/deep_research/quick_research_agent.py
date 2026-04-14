@@ -153,6 +153,6 @@ State confidence level.
 **ATTRIBUTION**: Every key fact needs source. Use "According to [Source]..." or "(Source: domain)".
 **BE FOCUSED**: This is quick research - prioritize directly answering the question over exhaustive coverage.""",
 
-    "allowed_tools": ["web_search", "web_fetch", "web_subpage_fetch", "web_crawl"],
+    "allowed_tools": ["web_search", "web_fetch", "web_subpage_fetch", "web_crawl", "x_search"],
     "caps": {"max_tokens": 16000, "temperature": 0.3},
 }

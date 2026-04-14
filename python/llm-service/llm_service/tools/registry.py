@@ -245,7 +245,7 @@ class ToolRegistry:
 
         # Core tools that should be prioritized for each task type
         TASK_CORE_TOOLS = {
-            "research": ["web_search", "web_fetch", "web_subpage_fetch"],
+            "research": ["web_search", "web_fetch", "web_subpage_fetch", "x_search"],
             "coding": ["python_executor", "file_read", "file_write", "file_edit"],
             "analysis": ["calculator", "advanced_calculator", "python_executor"],
             "browser": ["browser"],

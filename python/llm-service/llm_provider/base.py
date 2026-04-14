@@ -253,9 +253,10 @@ class LLMProvider(ABC):
             cache_5m = max(0, cache_creation_tokens - cache_creation_1h_tokens)
             input_cost += (cache_5m / 1000) * input_price * 1.25
             input_cost += (cache_creation_1h_tokens / 1000) * input_price * 2.0
-        elif model_config.provider == "kimi" and cache_read_tokens > 0:
-            # Kimi: cached tokens included in prompt_tokens at full price,
+        elif model_config.provider in ("kimi", "xai") and cache_read_tokens > 0:
+            # Kimi & xAI: cached tokens included in prompt_tokens at full price,
             # actual billing is 25% (75% discount) — subtract the 75% discount
+            # xAI: grok-4-1-fast cached input $0.05/1M vs base $0.20/1M
             input_cost -= (cache_read_tokens / 1000) * input_price * 0.75
         elif cache_read_tokens > 0:
             # OpenAI: cached tokens are already included in input_tokens at full price,

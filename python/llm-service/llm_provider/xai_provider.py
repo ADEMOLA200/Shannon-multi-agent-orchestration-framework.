@@ -3,7 +3,7 @@
 Provides a thin wrapper around the xAI (Grok) REST API which is intentionally
 OpenAI-compatible. We keep the logic simple and reuse the OpenAI chat
 completions surface while accounting for a few xAI-specific quirks (reasoning
-models ignoring certain parameters, Live Search surcharges, etc.).
+models ignoring certain parameters, etc.).
 """
 
 from __future__ import annotations
@@ -23,9 +23,6 @@ from .base import (
     TokenCounter,
     TokenUsage,
 )
-
-# Live Search pricing: $25 per 1k sources → $0.025 per source
-_LIVE_SEARCH_PRICE_PER_SOURCE = 0.025
 
 
 class XAIProvider(LLMProvider):
@@ -64,32 +61,23 @@ class XAIProvider(LLMProvider):
         """Populate a minimal catalog if models were not provided via config."""
 
         defaults: Dict[str, Dict[str, Any]] = {
-            "grok-3-mini": {
-                "model_id": "grok-3-mini",
+            "grok-4-1-fast-non-reasoning": {
+                "model_id": "grok-4-1-fast-non-reasoning",
                 "tier": "small",
-                "context_window": 131072,
-                "max_tokens": 32768,
+                "context_window": 2000000,
+                "max_tokens": 128000,
                 "supports_functions": True,
                 "supports_streaming": True,
                 "supports_reasoning": False,
             },
-            "grok-4-fast-reasoning": {
-                "model_id": "grok-4-fast-reasoning",
+            "grok-4-1-fast-reasoning": {
+                "model_id": "grok-4-1-fast-reasoning",
                 "tier": "large",
                 "context_window": 2000000,
                 "max_tokens": 128000,
                 "supports_functions": True,
                 "supports_streaming": True,
                 "supports_reasoning": True,
-            },
-            "grok-4-fast-non-reasoning": {
-                "model_id": "grok-4-fast-non-reasoning",
-                "tier": "medium",
-                "context_window": 2000000,
-                "max_tokens": 128000,
-                "supports_functions": True,
-                "supports_streaming": True,
-                "supports_reasoning": False,
             },
         }
 
@@ -263,7 +251,7 @@ class XAIProvider(LLMProvider):
         prompt_tokens = 0
         completion_tokens = 0
         total_tokens = 0
-        num_sources_used = 0
+        cached_tokens = 0
 
         usage = getattr(response, "usage", None)
         if usage:
@@ -273,9 +261,12 @@ class XAIProvider(LLMProvider):
                 total_tokens = int(
                     getattr(usage, "total_tokens", prompt_tokens + completion_tokens)
                 )
-                num_sources_used = int(getattr(usage, "num_sources_used", 0) or 0)
+                # xAI prompt caching: cached_tokens nested under prompt_tokens_details
+                details = getattr(usage, "prompt_tokens_details", None)
+                if details is not None:
+                    cached_tokens = int(getattr(details, "cached_tokens", 0) or 0)
             except Exception:
-                prompt_tokens = completion_tokens = total_tokens = 0
+                prompt_tokens = completion_tokens = total_tokens = cached_tokens = 0
 
         if total_tokens == 0:
             prompt_tokens = self.count_tokens(request.messages, model_id)
@@ -284,9 +275,9 @@ class XAIProvider(LLMProvider):
             )
             total_tokens = prompt_tokens + completion_tokens
 
-        base_cost = self.estimate_cost(prompt_tokens, completion_tokens, model_alias)
-        live_search_cost = num_sources_used * _LIVE_SEARCH_PRICE_PER_SOURCE
-        estimated_cost = base_cost + live_search_cost
+        estimated_cost = self.estimate_cost(
+            prompt_tokens, completion_tokens, model_alias, cache_read_tokens=cached_tokens
+        )
 
         finish_reason = getattr(choice, "finish_reason", None) or "stop"
         function_call: Optional[Dict[str, Any]] = None
@@ -417,19 +408,27 @@ class XAIProvider(LLMProvider):
         content = "\n\n".join(text_parts).strip()
 
         usage = raw.get("usage") or {}
+        cached_tokens = 0
         try:
             input_tokens = int(usage.get("input_tokens", 0))
             output_tokens = int(usage.get("output_tokens", 0))
             total_tokens = int(usage.get("total_tokens", input_tokens + output_tokens))
+            # xAI Responses API: cached_tokens nested under input_tokens_details
+            details = usage.get("input_tokens_details") or {}
+            if isinstance(details, dict):
+                cached_tokens = int(details.get("cached_tokens", 0) or 0)
         except Exception:
             input_tokens = self.count_tokens(request.messages, model_id)
             output_tokens = self.count_tokens(
                 [{"role": "assistant", "content": content}], model_id
             )
             total_tokens = input_tokens + output_tokens
+            cached_tokens = 0
 
         latency_ms = int((time.time() - start) * 1000)
-        cost = self.estimate_cost(input_tokens, output_tokens, model_alias)
+        cost = self.estimate_cost(
+            input_tokens, output_tokens, model_alias, cache_read_tokens=cached_tokens
+        )
 
         return CompletionResponse(
             content=content,

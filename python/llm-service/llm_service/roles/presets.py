@@ -33,7 +33,7 @@ _PRESETS: Dict[str, Dict[str, object]] = {
             "You are an analytical assistant. Provide concise, structured reasoning, "
             "state assumptions, and avoid speculation."
         ),
-        "allowed_tools": ["web_search", "file_read"],
+        "allowed_tools": ["web_search", "x_search", "file_read"],
         "caps": {"max_tokens": 30000, "temperature": 0.2},
     },
     "research": {
@@ -73,7 +73,7 @@ _PRESETS: Dict[str, Dict[str, object]] = {
             "\n- When you have multiple URLs, prefer web_fetch with urls=[...] to batch fetch"
             "\n- Do not self-report tool/provider usage in text; the system records it"
         ),
-        "allowed_tools": ["web_search", "web_fetch", "web_subpage_fetch", "web_crawl"],
+        "allowed_tools": ["web_search", "web_fetch", "web_subpage_fetch", "web_crawl", "x_search"],
         "caps": {"max_tokens": 16000, "temperature": 0.3},
     },
     # deep_research_agent: Moved to roles/deep_research/presets.py

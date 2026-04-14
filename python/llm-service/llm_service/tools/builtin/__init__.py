@@ -11,6 +11,7 @@ from .file_ops import FileReadTool, FileWriteTool, FileListTool, FileSearchTool,
 from .data_tools import DiffFilesTool, JsonQueryTool
 from .python_wasi_executor import PythonWasiExecutorTool
 from .bash_executor import BashExecutorTool
+from .x_search import XSearchTool
 
 # Browser automation tool
 try:
@@ -35,6 +36,7 @@ __all__ = [
     "JsonQueryTool",
     "BashExecutorTool",
     "PythonWasiExecutorTool",
+    "XSearchTool",
 ]
 
 # Add browser tool to exports if available

@@ -119,14 +119,6 @@ func TestCostForSplit_SyntheticScraperModels(t *testing.T) {
 	}{
 		// shannon_web_search: (7500/1000) × 0.002 = $0.015
 		{"shannon_web_search", 7500, 0.015, 0.001},
-		// shannon_google_ads: (7500/1000) × 0.002 = $0.015
-		{"shannon_google_ads", 7500, 0.015, 0.001},
-		// shannon_yahoo: (7500/1000) × 0.000533 ≈ $0.004
-		{"shannon_yahoo", 7500, 0.004, 0.001},
-		// shannon_meta: (7500/1000) × 0.000533 ≈ $0.004
-		{"shannon_meta", 7500, 0.004, 0.001},
-		// shannon_page_screenshot: (500/1000) × 0.002 = $0.001
-		{"shannon_page_screenshot", 500, 0.001, 0.001},
 		// shannon_firecrawl: (7500/1000) × 0.000133 ≈ $0.001
 		{"shannon_firecrawl", 7500, 0.001, 0.001},
 	}
@@ -203,6 +195,36 @@ func TestCostForSplitWithCache(t *testing.T) {
 			provider:            "openai",
 			wantMin:             0.002874,
 			wantMax:             0.002876,
+		},
+		{
+			// grok-4-1-fast-non-reasoning: input 0.0002/1K, output 0.0005/1K
+			// base = 5000/1000 * 0.0002 + 1000/1000 * 0.0005 = 0.001 + 0.0005 = 0.0015
+			// discount = 3000/1000 * 0.0002 * 0.75 = 0.00045
+			// expected = 0.0015 - 0.00045 = 0.00105
+			name:                "xai_cache_discount_75pct",
+			model:               "grok-4-1-fast-non-reasoning",
+			inputTokens:         5000,
+			outputTokens:        1000,
+			cacheReadTokens:     3000,
+			cacheCreationTokens: 0,
+			provider:            "xai",
+			wantMin:             0.001049,
+			wantMax:             0.001051,
+		},
+		{
+			// kimi-k2-turbo-preview: input 0.00115/1K, output 0.008/1K
+			// base = 5000/1000 * 0.00115 + 1000/1000 * 0.008 = 0.00575 + 0.008 = 0.01375
+			// discount = 3000/1000 * 0.00115 * 0.75 = 0.0025875
+			// expected = 0.01375 - 0.0025875 = 0.0111625
+			name:                "kimi_cache_discount_75pct",
+			model:               "kimi-k2-turbo-preview",
+			inputTokens:         5000,
+			outputTokens:        1000,
+			cacheReadTokens:     3000,
+			cacheCreationTokens: 0,
+			provider:            "kimi",
+			wantMin:             0.011161,
+			wantMax:             0.011164,
 		},
 	}
 

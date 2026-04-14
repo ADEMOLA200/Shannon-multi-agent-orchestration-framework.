@@ -4,6 +4,8 @@ Unit tests for model tier selection in LLM service.
 Tests ensure top-level query.model_tier is respected before defaulting to context/model-based tiers.
 """
 
+from __future__ import annotations  # PEP 604 `X | None` syntax on Python 3.9
+
 from enum import Enum
 
 

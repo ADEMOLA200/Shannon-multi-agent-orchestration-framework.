@@ -29,6 +29,7 @@ from ..tools.builtin import (
     PythonWasiExecutorTool,
     DiffFilesTool,
     JsonQueryTool,
+    XSearchTool,
 )
 
 # Browser automation tool (requires playwright service)
@@ -340,6 +341,7 @@ async def startup_event():
         PythonWasiExecutorTool,
         DiffFilesTool,
         JsonQueryTool,
+        XSearchTool,
     ]
 
     for tool_class in tools_to_register:

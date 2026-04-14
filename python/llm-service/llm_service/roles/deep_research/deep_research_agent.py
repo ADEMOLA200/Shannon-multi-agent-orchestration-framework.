@@ -355,6 +355,6 @@ Only if sources disagree:
 
 **RULES**: Every key fact attributed with (Source: domain). Be thorough and evidence-rich — capture all important findings — but skip structural padding. The final report structure is handled by synthesis.""",
 
-    "allowed_tools": ["web_search", "web_fetch", "web_subpage_fetch", "web_crawl"],
+    "allowed_tools": ["web_search", "web_fetch", "web_subpage_fetch", "web_crawl", "x_search"],
     "caps": {"max_tokens": 30000, "temperature": 0.3},
 }

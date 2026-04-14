@@ -25,7 +25,7 @@ model_tiers:
         model: claude-haiku-4-5-20251001
         priority: 1
       - provider: xai
-        model: grok-3-mini
+        model: grok-4-1-fast-non-reasoning
         priority: 3
       - provider: google
         model: gemini-2.5-flash-lite
@@ -63,7 +63,7 @@ model_tiers:
         model: gpt-5-mini-2025-08-07
         priority: 3
       - provider: xai
-        model: grok-4-fast-non-reasoning
+        model: grok-4-1-fast-non-reasoning
         priority: 4
       - provider: google
         model: gemini-2.5-flash
@@ -104,7 +104,7 @@ model_tiers:
         model: claude-opus-4-1-20250805
         priority: 4
       - provider: xai
-        model: grok-4-fast-reasoning
+        model: grok-4-1-fast-reasoning
         priority: 5
       - provider: google
         model: gemini-2.5-pro
@@ -379,24 +379,24 @@ model_catalog:
       supports_vision: true
 
   xai:
-    grok-3-mini:
-      model_id: grok-3-mini
+    grok-4-1-fast-non-reasoning:
+      model_id: grok-4-1-fast-non-reasoning
       tier: small
-      context_window: 131072
-      max_tokens: 32768
-      supports_functions: true
-      supports_streaming: true
-      supports_reasoning: false
-    grok-4-fast-non-reasoning:
-      model_id: grok-4-fast-non-reasoning
-      tier: medium
       context_window: 2000000
       max_tokens: 128000
       supports_functions: true
       supports_streaming: true
       supports_reasoning: false
-    grok-4-fast-reasoning:
-      model_id: grok-4-fast-reasoning
+    grok-4-1-fast-reasoning:
+      model_id: grok-4-1-fast-reasoning
+      tier: large
+      context_window: 2000000
+      max_tokens: 128000
+      supports_functions: true
+      supports_streaming: true
+      supports_reasoning: true
+    grok-4.20-0309-reasoning:
+      model_id: grok-4.20-0309-reasoning
       tier: large
       context_window: 2000000
       max_tokens: 128000
@@ -758,18 +758,15 @@ pricing:
         output_per_1k: 0.00030
         
     xai:
-      grok-3-mini:
-        input_per_1k: 0.0003
-        output_per_1k: 0.0005
-      grok-4-fast-non-reasoning:
+      grok-4-1-fast-non-reasoning:
         input_per_1k: 0.0002
         output_per_1k: 0.0005
-      grok-4-fast-reasoning:
+      grok-4-1-fast-reasoning:
         input_per_1k: 0.0002
         output_per_1k: 0.0005
-      grok-beta:
-        input_per_1k: 0.0380
-        output_per_1k: 0.1140
+      grok-4.20-0309-reasoning:
+        input_per_1k: 0.0020
+        output_per_1k: 0.0060
         
     zai:
       glm-4.7-flash:
@@ -908,7 +905,8 @@ model_capabilities:
     - gemini-2.5-pro
     - deepseek-reasoner
     - qwen3-omni-30b-a3b-instruct
-    - grok-4-fast-reasoning
+    - grok-4-1-fast-reasoning
+    - grok-4.20-0309-reasoning
     - kimi-k2-thinking
     - MiniMax-M2.7
     - glm-5
