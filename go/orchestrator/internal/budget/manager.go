@@ -52,7 +52,8 @@ type BudgetTokenUsage struct {
 	OutputTokens        int                    `json:"output_tokens"`
 	TotalTokens         int                    `json:"total_tokens"`
 	CacheReadTokens     int                    `json:"cache_read_tokens,omitempty"`
-	CacheCreationTokens int                    `json:"cache_creation_tokens,omitempty"`
+	CacheCreationTokens   int                    `json:"cache_creation_tokens,omitempty"`
+	CacheCreation1hTokens int                    `json:"cache_creation_1h_tokens,omitempty"`
 	CallSequence        int                    `json:"call_sequence,omitempty"`
 	CostUSD             float64                `json:"cost_usd"`
 	CostOverride        float64                `json:"cost_override,omitempty"` // When > 0, use this instead of pricing calculation (e.g. Python-reported cost_usd)
@@ -332,7 +333,7 @@ func (bm *BudgetManager) RecordUsage(ctx context.Context, usage *BudgetTokenUsag
 	} else {
 		usage.CostUSD = pricing.CostForSplitWithCache(
 			usage.Model, usage.InputTokens, usage.OutputTokens,
-			usage.CacheReadTokens, usage.CacheCreationTokens, 0, usage.Provider,
+			usage.CacheReadTokens, usage.CacheCreationTokens, usage.CacheCreation1hTokens, usage.Provider,
 		)
 	}
 

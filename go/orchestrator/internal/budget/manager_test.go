@@ -171,3 +171,35 @@ func TestRecordUsage_NoCostOverrideFallsToPricing(t *testing.T) {
 		t.Fatalf("expected CostUSD > 0 from pricing calculation, got %f", usage.CostUSD)
 	}
 }
+
+func TestRecordUsage_1hCacheCreationPricedCorrectly(t *testing.T) {
+	bm := NewBudgetManager(nil, zap.NewNop())
+
+	bm.SetSessionBudget("sess1", &TokenBudget{
+		TaskBudget:    100000,
+		SessionBudget: 100000,
+	})
+
+	usage := &BudgetTokenUsage{
+		UserID:                "u1",
+		SessionID:             "sess1",
+		Model:                 "claude-sonnet-4-5-20250929",
+		Provider:              "anthropic",
+		InputTokens:           1000,
+		OutputTokens:          500,
+		CacheCreationTokens:   3000,
+		CacheCreation1hTokens: 2000,
+	}
+	if err := bm.RecordUsage(context.Background(), usage); err != nil {
+		t.Fatalf("RecordUsage error: %v", err)
+	}
+
+	// claude-sonnet-4-5-20250929: input 0.003/1K, output 0.015/1K
+	// base = 1000/1000 * 0.003 + 500/1000 * 0.015 = 0.0105
+	// 5m: 1000/1000 * 0.003 * 1.25 = 0.00375
+	// 1h: 2000/1000 * 0.003 * 2.0  = 0.012
+	// expected = 0.0105 + 0.00375 + 0.012 = 0.02625
+	if usage.CostUSD < 0.026 || usage.CostUSD > 0.027 {
+		t.Errorf("CostUSD = %f, want ~0.02625", usage.CostUSD)
+	}
+}

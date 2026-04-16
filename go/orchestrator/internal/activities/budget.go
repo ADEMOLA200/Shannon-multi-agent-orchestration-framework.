@@ -200,7 +200,8 @@ type TokenUsageInput struct {
 	InputTokens         int                    `json:"input_tokens"`
 	OutputTokens        int                    `json:"output_tokens"`
 	CacheReadTokens     int                    `json:"cache_read_tokens,omitempty"`
-	CacheCreationTokens int                    `json:"cache_creation_tokens,omitempty"`
+	CacheCreationTokens   int                    `json:"cache_creation_tokens,omitempty"`
+	CacheCreation1hTokens int                    `json:"cache_creation_1h_tokens,omitempty"`
 	CallSequence        int                    `json:"call_sequence,omitempty"`
 	CostOverride        float64                `json:"cost_override,omitempty"` // When > 0, use instead of pricing calculation
 	Metadata            map[string]interface{} `json:"metadata"`
@@ -233,7 +234,8 @@ func (b *BudgetActivities) RecordTokenUsage(ctx context.Context, input TokenUsag
 		InputTokens:         input.InputTokens,
 		OutputTokens:        input.OutputTokens,
 		CacheReadTokens:     input.CacheReadTokens,
-		CacheCreationTokens: input.CacheCreationTokens,
+		CacheCreationTokens:   input.CacheCreationTokens,
+		CacheCreation1hTokens: input.CacheCreation1hTokens,
 		CallSequence:        input.CallSequence,
 		CostOverride:        input.CostOverride,
 		Metadata:            input.Metadata,
