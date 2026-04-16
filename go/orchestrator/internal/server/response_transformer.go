@@ -288,6 +288,7 @@ func extractUsage(result workflows.TaskResult) ResponseUsage {
 		// Prompt cache metrics (Anthropic cache read/creation tokens)
 		usage.CacheReadTokens = getIntFromMetadata(result.Metadata, "cache_read_tokens")
 		usage.CacheCreationTokens = getIntFromMetadata(result.Metadata, "cache_creation_tokens")
+		cacheCreation1hTokens := getIntFromMetadata(result.Metadata, "cache_creation_1h_tokens")
 
 		// Calculate cache savings: difference between full-price and cache-discounted cost
 		if usage.CacheReadTokens > 0 || usage.CacheCreationTokens > 0 {
@@ -308,7 +309,7 @@ func extractUsage(result workflows.TaskResult) ResponseUsage {
 				// input_tokens already INCLUDES cached tokens, so CostForSplit on
 				// input_tokens alone is the correct uncached baseline.
 				costWithCache := pricing.CostForSplitWithCache(model, usage.InputTokens, usage.OutputTokens,
-					usage.CacheReadTokens, usage.CacheCreationTokens, 0, provider)
+					usage.CacheReadTokens, usage.CacheCreationTokens, cacheCreation1hTokens, provider)
 				var costWithoutCache float64
 				if provider == "anthropic" || provider == "minimax" {
 					costWithoutCache = pricing.CostForSplit(model, usage.InputTokens+usage.CacheReadTokens+usage.CacheCreationTokens, usage.OutputTokens)
