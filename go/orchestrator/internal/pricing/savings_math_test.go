@@ -30,7 +30,7 @@ func TestCacheSavings_xAI_NoDoubleCount(t *testing.T) {
 	model := "grok-4-1-fast-non-reasoning"
 	input, output, cacheRead := 15254, 2280, 1805
 
-	withCache := CostForSplitWithCache(model, input, output, cacheRead, 0, "xai")
+	withCache := CostForSplitWithCache(model, input, output, cacheRead, 0, 0, "xai")
 	// Cache-inclusive providers: use input directly, no addition
 	withoutCache := CostForSplit(model, input, output)
 	savings := withoutCache - withCache
@@ -52,7 +52,7 @@ func TestCacheSavings_MiniMax_AnthropicStyle(t *testing.T) {
 	model := "MiniMax-M2.7"
 	input, output, cacheRead, cacheCreate := 5000, 1000, 3000, 0
 
-	withCache := CostForSplitWithCache(model, input, output, cacheRead, cacheCreate, "minimax")
+	withCache := CostForSplitWithCache(model, input, output, cacheRead, cacheCreate, 0, "minimax")
 	// Cache-separate providers: reconstruct baseline by adding cache tokens back.
 	withoutCache := CostForSplit(model, input+cacheRead+cacheCreate, output)
 	savings := withoutCache - withCache

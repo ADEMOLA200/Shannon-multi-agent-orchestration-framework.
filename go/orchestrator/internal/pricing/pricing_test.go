@@ -142,15 +142,16 @@ func TestCostForSplitWithCache(t *testing.T) {
 	mu.Unlock()
 
 	tests := []struct {
-		name                string
-		model               string
-		inputTokens         int
-		outputTokens        int
-		cacheReadTokens     int
-		cacheCreationTokens int
-		provider            string
-		wantMin             float64
-		wantMax             float64
+		name                  string
+		model                 string
+		inputTokens           int
+		outputTokens          int
+		cacheReadTokens       int
+		cacheCreationTokens   int
+		cacheCreation1hTokens int
+		provider              string
+		wantMin               float64
+		wantMax               float64
 	}{
 		{
 			name:                "anthropic_no_cache",
@@ -242,13 +243,48 @@ func TestCostForSplitWithCache(t *testing.T) {
 			wantMin:             0.003903,
 			wantMax:             0.003905,
 		},
+		{
+			// claude-sonnet-4-5-20250929: input 0.003/1K, output 0.015/1K
+			// base = 1000/1000 * 0.003 + 500/1000 * 0.015 = 0.003 + 0.0075 = 0.0105
+			// cache_creation 3000 total, 2000 at 1h TTL, 1000 at 5m TTL
+			// 5m: 1000/1000 * 0.003 * 1.25 = 0.00375
+			// 1h: 2000/1000 * 0.003 * 2.0  = 0.012
+			// expected = 0.0105 + 0.00375 + 0.012 = 0.02625
+			name:                  "anthropic_1h_cache_creation",
+			model:                 "claude-sonnet-4-5-20250929",
+			inputTokens:           1000,
+			outputTokens:          500,
+			cacheReadTokens:       0,
+			cacheCreationTokens:   3000,
+			cacheCreation1hTokens: 2000,
+			provider:              "anthropic",
+			wantMin:               0.02625 - 0.0001,
+			wantMax:               0.02625 + 0.0001,
+		},
+		{
+			// claude-sonnet-4-5-20250929: input 0.003/1K, output 0.015/1K
+			// base = 1000/1000 * 0.003 + 500/1000 * 0.015 = 0.003 + 0.0075 = 0.0105
+			// cache_creation 2000 all at 5m TTL (no 1h)
+			// 5m: 2000/1000 * 0.003 * 1.25 = 0.0075
+			// expected = 0.0105 + 0.0075 = 0.018
+			name:                  "anthropic_all_5m_no_1h",
+			model:                 "claude-sonnet-4-5-20250929",
+			inputTokens:           1000,
+			outputTokens:          500,
+			cacheReadTokens:       0,
+			cacheCreationTokens:   2000,
+			cacheCreation1hTokens: 0,
+			provider:              "anthropic",
+			wantMin:               0.018 - 0.0001,
+			wantMax:               0.018 + 0.0001,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cost := CostForSplitWithCache(
 				tt.model, tt.inputTokens, tt.outputTokens,
-				tt.cacheReadTokens, tt.cacheCreationTokens, tt.provider,
+				tt.cacheReadTokens, tt.cacheCreationTokens, tt.cacheCreation1hTokens, tt.provider,
 			)
 			if cost < tt.wantMin || cost > tt.wantMax {
 				t.Errorf("CostForSplitWithCache(%s): got %f, want [%f, %f]",

@@ -4111,7 +4111,7 @@ func buildSwarmMetadata(results map[string]AgentLoopResult) map[string]interface
 		totalCacheCreation += r.CacheCreationTokens
 		totalCost += pricing.CostForSplitWithCache(
 			r.ModelUsed, r.InputTokens, r.OutputTokens,
-			r.CacheReadTokens, r.CacheCreationTokens, r.Provider,
+			r.CacheReadTokens, r.CacheCreationTokens, 0, r.Provider,
 		)
 	}
 

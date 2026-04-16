@@ -308,7 +308,7 @@ func extractUsage(result workflows.TaskResult) ResponseUsage {
 				// input_tokens already INCLUDES cached tokens, so CostForSplit on
 				// input_tokens alone is the correct uncached baseline.
 				costWithCache := pricing.CostForSplitWithCache(model, usage.InputTokens, usage.OutputTokens,
-					usage.CacheReadTokens, usage.CacheCreationTokens, provider)
+					usage.CacheReadTokens, usage.CacheCreationTokens, 0, provider)
 				var costWithoutCache float64
 				if provider == "anthropic" || provider == "minimax" {
 					costWithoutCache = pricing.CostForSplit(model, usage.InputTokens+usage.CacheReadTokens+usage.CacheCreationTokens, usage.OutputTokens)

@@ -332,7 +332,7 @@ func (bm *BudgetManager) RecordUsage(ctx context.Context, usage *BudgetTokenUsag
 	} else {
 		usage.CostUSD = pricing.CostForSplitWithCache(
 			usage.Model, usage.InputTokens, usage.OutputTokens,
-			usage.CacheReadTokens, usage.CacheCreationTokens, usage.Provider,
+			usage.CacheReadTokens, usage.CacheCreationTokens, 0, usage.Provider,
 		)
 	}
 

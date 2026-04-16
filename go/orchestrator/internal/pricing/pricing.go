@@ -262,10 +262,12 @@ func CostForSplit(model string, inputTokens, outputTokens int) float64 {
 }
 
 // CostForSplitWithCache computes cost including prompt cache pricing adjustments.
-// For Anthropic/MiniMax: input_tokens excludes cache; cache_read at 10%, cache_creation at 125% of input price.
+// For Anthropic/MiniMax: input_tokens excludes cache; cache_read at 10%,
+// 5m creation at 125%, 1h creation at 200% of input price.
+// cacheCreation1hTokens is the subset of cacheCreationTokens that used 1h TTL.
 // For Kimi/xAI: input_tokens includes cache; cache_read gets 75% discount (billed at 25%).
 // For OpenAI (default): input_tokens includes cache; cache_read gets 50% discount.
-func CostForSplitWithCache(model string, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens int, provider string) float64 {
+func CostForSplitWithCache(model string, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, cacheCreation1hTokens int, provider string) float64 {
 	base := CostForSplit(model, inputTokens, outputTokens)
 	if cacheReadTokens <= 0 && cacheCreationTokens <= 0 {
 		return base
@@ -288,8 +290,14 @@ func CostForSplitWithCache(model string, inputTokens, outputTokens, cacheReadTok
 	case provider == "anthropic" || provider == "minimax":
 		// Anthropic/MiniMax: cache tokens are separate from input_tokens,
 		// add them at discounted (read) / premium (creation) rates.
+		// 1h TTL creation is billed at 2.0x; 5m TTL creation at 1.25x.
 		base += (float64(cacheReadTokens) / 1000.0) * inputPer1K * 0.1
-		base += (float64(cacheCreationTokens) / 1000.0) * inputPer1K * 1.25
+		cache5m := cacheCreationTokens - cacheCreation1hTokens
+		if cache5m < 0 {
+			cache5m = 0
+		}
+		base += (float64(cache5m) / 1000.0) * inputPer1K * 1.25
+		base += (float64(cacheCreation1hTokens) / 1000.0) * inputPer1K * 2.0
 	case provider == "kimi" || provider == "xai":
 		// Kimi/xAI: cached tokens included in input_tokens at full price,
 		// actual billing is 25% (75% discount) — subtract the 75% discount.
