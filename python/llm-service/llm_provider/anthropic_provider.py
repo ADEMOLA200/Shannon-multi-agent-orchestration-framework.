@@ -131,6 +131,15 @@ def _ttl_block(request) -> Optional[Dict[str, str]]:
 # rolling marker writes a fresh block while the previous block becomes
 # unreachable — long-session CER drops from 16.85x (3-turn) to 2.35x
 # (30-turn). Preserving prev marker keeps both writes readable.
+#
+# Concurrency: _apply_rolling_cache_marker is currently NOT wired into
+# _build_api_request (disabled by the 2026-04-15 bench regression — see
+# docs/cache-strategy.md). That means this dict never sees concurrent writes
+# in production today. If the preservation path is ever re-enabled, wrap
+# _remember_marker / _recall_marker with an asyncio.Lock (or move the memo
+# to a per-session object) before the first request hits them — FastAPI
+# dispatches async handlers concurrently and OrderedDict.popitem is not
+# coroutine-safe.
 _PREV_ROLLING_MAX = 1000
 _prev_rolling = OrderedDict()  # session_id → marker hash; LRU evicted
 
@@ -229,11 +238,10 @@ def _build_beta_header(
     SHANNON_NO_ADVANCED_TOOL_USE_BETA=1 is set as an endpoint escape hatch for
     GA paths that reject the beta token).
     """
-    import os as _os
     tokens: list[str] = []
     if thinking:
         tokens.append("interleaved-thinking-2025-05-14")
-    if any_deferred and _os.environ.get("SHANNON_NO_ADVANCED_TOOL_USE_BETA") != "1":
+    if any_deferred and os.environ.get("SHANNON_NO_ADVANCED_TOOL_USE_BETA") != "1":
         tokens.append("advanced-tool-use-2025-11-20")
     if not tokens:
         return None
