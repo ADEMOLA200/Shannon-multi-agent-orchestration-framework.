@@ -897,12 +897,11 @@ class AnthropicProvider(LLMProvider):
           - ttl_block is a dict: every existing cache_control value is REPLACED
             with ttl_block, including any values an upstream caller explicitly
             set. This is intentional: Anthropic requires TTL monotonic-non-
-            increasing across tools → system → messages, and b1d05cc established
-            "single resolved TTL per request" as the design contract
-            (commit: "trivially satisfying monotonic TTL across all 4 breakpoints").
-            Heterogeneous TTL layouts (e.g. 1h prefix + 5m tail) are not a
-            supported path today; if a future design requires them, this guard
-            must be revisited.
+            increasing across tools → system → messages, and the current design
+            contract is "single resolved TTL per request" so that the invariant
+            is trivially satisfied at every breakpoint. Heterogeneous TTL
+            layouts (e.g. 1h prefix + 5m tail) are not a supported path today;
+            if a future design requires them, this guard must be revisited.
           - ttl_block is None (SHANNON_FORCE_TTL=off): every cache_control is
             stripped so no prompt-cache writes happen.
 
@@ -916,6 +915,9 @@ class AnthropicProvider(LLMProvider):
         def _visit(container: Any) -> None:
             nonlocal modified
             if isinstance(container, dict):
+                # cache_control always sits directly on content-block dicts
+                # (tools, system blocks, message content blocks); there's no
+                # need to recurse into other dict values for Anthropic's schema.
                 if "cache_control" in container:
                     if ttl_block is None:
                         container.pop("cache_control", None)
