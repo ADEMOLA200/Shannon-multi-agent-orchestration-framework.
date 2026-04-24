@@ -3507,6 +3507,22 @@ def _build_volatile_sections(body: AgentLoopStepRequest) -> list:
     return parts
 
 
+def _resolve_loop_cache_source(body: "AgentLoopStepRequest") -> str:
+    """Pick the cache_source for a /agent/loop step.
+
+    Must be called identically by build_agent_messages() and agent_loop_step()
+    so that the TTL tagged on the frozen breakpoint (message-level) matches
+    the TTL the provider will resolve for the outgoing request. Otherwise
+    _force_uniform_cache_ttl in the provider would silently rewrite the
+    message-level TTL, making any "preserve upstream cache_source" intent
+    ineffective for interactive callers.
+    """
+    ctx_src = body.context.get("cache_source") if isinstance(body.context, dict) else None
+    if isinstance(ctx_src, str) and ctx_src.strip():
+        return ctx_src.strip()
+    return "agent_loop"
+
+
 def _build_multi_turn_messages(body: AgentLoopStepRequest, system_prompt: str, cache_source: str = "agent_loop") -> list:
     """Build append-only multi-turn messages for Anthropic prompt cache.
 
@@ -3642,12 +3658,7 @@ def build_agent_messages(body: AgentLoopStepRequest, raw_attachments=None) -> li
     use_multi_turn = has_replay and (body.model_tier in ("medium", "large") or is_non_haiku_override)
     if use_multi_turn:
         logger.info(f"AgentLoop: multi-turn mode (agent={body.agent_id}, tier={body.model_tier}, turns={len([t for t in body.history if t.assistant_replay])})")
-        # Preserve upstream cache_source when present (e.g. shanclaw) so the
-        # frozen breakpoint TTL matches what the provider resolves; otherwise
-        # fall back to "agent_loop" which the provider maps to 5m (safe short).
-        ctx_src = body.context.get("cache_source") if isinstance(body.context, dict) else None
-        cache_source = ctx_src.strip() if isinstance(ctx_src, str) and ctx_src.strip() else "agent_loop"
-        return _build_multi_turn_messages(body, system_prompt, cache_source)
+        return _build_multi_turn_messages(body, system_prompt, _resolve_loop_cache_source(body))
 
     # --- Legacy: single user message (original structure) ---
     user_parts: list[str] = []
@@ -3868,7 +3879,10 @@ async def agent_loop_step(request: Request, body: AgentLoopStepRequest) -> Agent
                 gen_kwargs["response_format"] = {"type": "json_object"}
         if body.previous_response_id:
             gen_kwargs["previous_response_id"] = body.previous_response_id
-        gen_kwargs.setdefault("cache_source", "agent_loop")
+        # Same helper used by build_agent_messages when it tagged the frozen
+        # breakpoint — keeps message-level TTL and provider-resolved TTL in
+        # lockstep so _force_uniform_cache_ttl has nothing to rewrite.
+        gen_kwargs.setdefault("cache_source", _resolve_loop_cache_source(body))
 
         result = await providers.generate_completion(
             messages=messages,

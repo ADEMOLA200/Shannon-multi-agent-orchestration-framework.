@@ -127,6 +127,39 @@ class TestCacheTtlFieldIgnored:
         assert _ttl_block(req) == CACHE_TTL_SHORT
 
 
+class TestResolveLoopCacheSource:
+    """Single source-of-truth helper the /agent/loop handler uses for BOTH
+    message-level breakpoint tagging AND the provider call. If these drift,
+    _force_uniform_cache_ttl silently rewrites the TTL and any upstream
+    identity (e.g. shanclaw) becomes ineffective."""
+
+    def _body(self, context=None):
+        from llm_service.api.agent import AgentLoopStepRequest
+        return AgentLoopStepRequest(
+            agent_id="a", workflow_id="w", task="t",
+            context=context if context is not None else {},
+        )
+
+    def test_context_cache_source_wins(self):
+        from llm_service.api.agent import _resolve_loop_cache_source
+        assert _resolve_loop_cache_source(self._body({"cache_source": "shanclaw"})) == "shanclaw"
+
+    def test_fallback_to_agent_loop(self):
+        from llm_service.api.agent import _resolve_loop_cache_source
+        assert _resolve_loop_cache_source(self._body()) == "agent_loop"
+        assert _resolve_loop_cache_source(self._body({})) == "agent_loop"
+
+    def test_empty_or_whitespace_falls_back(self):
+        from llm_service.api.agent import _resolve_loop_cache_source
+        assert _resolve_loop_cache_source(self._body({"cache_source": ""})) == "agent_loop"
+        assert _resolve_loop_cache_source(self._body({"cache_source": "   "})) == "agent_loop"
+        assert _resolve_loop_cache_source(self._body({"cache_source": None})) == "agent_loop"
+
+    def test_strips_surrounding_whitespace(self):
+        from llm_service.api.agent import _resolve_loop_cache_source
+        assert _resolve_loop_cache_source(self._body({"cache_source": "  slack  "})) == "slack"
+
+
 class TestResolvePromptCacheTtlBlock:
     """Public pure-function API: same semantics as _ttl_block but takes a
     cache_source string so upstream callers (llm_service.api.agent) don't
