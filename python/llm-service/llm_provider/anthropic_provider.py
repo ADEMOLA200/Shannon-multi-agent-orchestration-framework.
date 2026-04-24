@@ -878,7 +878,39 @@ class AnthropicProvider(LLMProvider):
                 parts.append(f"model={break_info.get('prev_model', '')}→{break_info.get('new_model', '')}")
             logger.warning(" ".join(parts))
 
+        # Defensive: upstream callers (agent.py agent loop, history replay)
+        # inject cache_control with a hardcoded TTL that may not match the
+        # one resolved for this request's cache_source. Anthropic requires
+        # TTLs to be monotonic non-increasing across tools → system → messages.
+        # Force every existing cache_control to the single resolved ttl_block
+        # (or strip them entirely when SHANNON_FORCE_TTL=off).
+        self._force_uniform_cache_ttl(api_request, ttl_block)
+
         return api_request
+
+    @staticmethod
+    def _force_uniform_cache_ttl(api_request: Dict[str, Any], ttl_block: Optional[Dict[str, str]]) -> None:
+        """Normalize every cache_control block in api_request to ttl_block.
+
+        When ttl_block is None (SHANNON_FORCE_TTL=off), strips all cache_control
+        so no prompt-cache writes happen.
+        """
+        def _visit(container: Any) -> None:
+            if isinstance(container, dict):
+                if "cache_control" in container:
+                    if ttl_block is None:
+                        container.pop("cache_control", None)
+                    else:
+                        container["cache_control"] = ttl_block
+            elif isinstance(container, list):
+                for item in container:
+                    _visit(item)
+
+        for t in api_request.get("tools", []) or []:
+            _visit(t)
+        _visit(api_request.get("system"))
+        for m in api_request.get("messages", []) or []:
+            _visit(m.get("content"))
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """Generate a completion using Anthropic API"""
