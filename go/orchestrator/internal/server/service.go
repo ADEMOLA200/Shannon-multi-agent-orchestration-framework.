@@ -218,8 +218,31 @@ func (s *OrchestratorService) SetScheduleManager(m *schedules.Manager) {
 	s.scheduleManager = m
 }
 
-// RecordUsage is a no-op in the open source version (enterprise quota tracking removed).
-func (s *OrchestratorService) RecordUsage(ctx context.Context, tenantID uuid.UUID, workflowID string, tokensUsed int64) {
+// RecordUsageDetails carries the full cache-aware breakdown that enterprise
+// quota implementations (shannon-cloud) consume after cherry-pick. The OSS
+// implementation of RecordUsage is a no-op; CacheAwareTotalTokens is
+// pre-computed by the caller as
+//
+//	InputTokens + OutputTokens + CacheReadTokens + CacheCreationTokens
+//
+// so downstream code does not need to re-derive it. Enterprise overrides
+// should still verify the invariant before persisting.
+type RecordUsageDetails struct {
+	InputTokens           int64
+	OutputTokens          int64
+	CacheReadTokens       int64
+	CacheCreationTokens   int64
+	CacheCreation1hTokens int64
+	CacheAwareTotalTokens int64
+	Model                 string
+	Provider              string
+}
+
+// RecordUsage is a no-op in the open source version. shannon-cloud overrides
+// this method to drive enterprise quota tracking; the RecordUsageDetails
+// argument carries the full cache-aware breakdown so the override can bill
+// prompt-cache cost without re-querying the DB.
+func (s *OrchestratorService) RecordUsage(ctx context.Context, tenantID uuid.UUID, workflowID string, details RecordUsageDetails) {
 }
 
 // SetWorkflowDefaultsProvider sets a provider for BypassSingleResult default
@@ -1477,13 +1500,14 @@ func (s *OrchestratorService) GetTaskStatus(ctx context.Context, req *pb.GetTask
 			// Enrich agent_usages in metadata from token_usage if missing or zero
 			// Build per-agent summary (agent_id, model, provider, input/output/total, cost)
 			type agentUsageRow struct {
-				AgentID      sql.NullString
-				Model        sql.NullString
-				Provider     sql.NullString
-				InputTokens  sql.NullInt64
-				OutputTokens sql.NullInt64
-				TotalTokens  sql.NullInt64
-				CostUSD      sql.NullFloat64
+				AgentID               sql.NullString
+				Model                 sql.NullString
+				Provider              sql.NullString
+				InputTokens           sql.NullInt64
+				OutputTokens          sql.NullInt64
+				TotalTokens           sql.NullInt64
+				CacheAwareTotalTokens sql.NullInt64
+				CostUSD               sql.NullFloat64
 			}
 
 			needAgentUsages := true
@@ -1517,10 +1541,11 @@ func (s *OrchestratorService) GetTaskStatus(ctx context.Context, req *pb.GetTask
                         SELECT COALESCE(agent_id, '') AS agent_id,
                                COALESCE(model, '')     AS model,
                                COALESCE(provider, '')  AS provider,
-                               COALESCE(SUM(prompt_tokens), 0)     AS input_tokens,
-                               COALESCE(SUM(completion_tokens), 0) AS output_tokens,
-                               COALESCE(SUM(total_tokens), 0)      AS total_tokens,
-                               COALESCE(SUM(cost_usd), 0)          AS cost_usd
+                               COALESCE(SUM(prompt_tokens), 0)             AS input_tokens,
+                               COALESCE(SUM(completion_tokens), 0)         AS output_tokens,
+                               COALESCE(SUM(total_tokens), 0)              AS total_tokens,
+                               COALESCE(SUM(cache_aware_total_tokens), 0)  AS cache_aware_total_tokens,
+                               COALESCE(SUM(cost_usd), 0)                  AS cost_usd
                         FROM token_usage tu
                         JOIN task_executions te ON tu.task_id = te.id
                         WHERE te.workflow_id = $1
@@ -1531,7 +1556,7 @@ func (s *OrchestratorService) GetTaskStatus(ctx context.Context, req *pb.GetTask
 					var usages []map[string]interface{}
 					for rows.Next() {
 						var r agentUsageRow
-						if scanErr := rows.Scan(&r.AgentID, &r.Model, &r.Provider, &r.InputTokens, &r.OutputTokens, &r.TotalTokens, &r.CostUSD); scanErr != nil {
+						if scanErr := rows.Scan(&r.AgentID, &r.Model, &r.Provider, &r.InputTokens, &r.OutputTokens, &r.TotalTokens, &r.CacheAwareTotalTokens, &r.CostUSD); scanErr != nil {
 							continue
 						}
 						usage := map[string]interface{}{}
@@ -1549,6 +1574,9 @@ func (s *OrchestratorService) GetTaskStatus(ctx context.Context, req *pb.GetTask
 						}
 						if r.TotalTokens.Valid {
 							usage["total_tokens"] = int(r.TotalTokens.Int64)
+						}
+						if r.CacheAwareTotalTokens.Valid {
+							usage["cache_aware_total_tokens"] = int(r.CacheAwareTotalTokens.Int64)
 						}
 						if r.CostUSD.Valid {
 							usage["cost_usd"] = r.CostUSD.Float64
@@ -1576,6 +1604,7 @@ func (s *OrchestratorService) GetTaskStatus(ctx context.Context, req *pb.GetTask
 			var aggCompletionTokens sql.NullInt64
 			var aggCacheRead sql.NullInt64
 			var aggCacheCreation sql.NullInt64
+			var aggCacheAware sql.NullInt64
 			row := s.dbClient.Wrapper().QueryRowContext(ctx, `
                 SELECT
                     COALESCE(SUM(tu.cost_usd), 0),
@@ -1583,14 +1612,15 @@ func (s *OrchestratorService) GetTaskStatus(ctx context.Context, req *pb.GetTask
                     COALESCE(SUM(tu.prompt_tokens), 0),
                     COALESCE(SUM(tu.completion_tokens), 0),
                     COALESCE(SUM(tu.cache_read_tokens), 0),
-                    COALESCE(SUM(tu.cache_creation_tokens), 0)
+                    COALESCE(SUM(tu.cache_creation_tokens), 0),
+                    COALESCE(SUM(tu.cache_aware_total_tokens), 0)
                 FROM token_usage tu
                 JOIN task_executions te ON tu.task_id = te.id
                 WHERE te.workflow_id = $1`, workflowID)
 			// Guard against nil row from circuit breaker
 			if row != nil {
 				if err := row.Scan(&aggCost, &aggTotalTokens, &aggPromptTokens, &aggCompletionTokens,
-					&aggCacheRead, &aggCacheCreation); err == nil {
+					&aggCacheRead, &aggCacheCreation, &aggCacheAware); err == nil {
 					// Only overwrite with DB aggregates when non-zero (preserves workflow metadata when token_usage rows don't exist yet)
 					s.logger.Info("Token usage aggregation succeeded",
 						zap.String("workflow_id", workflowID),
@@ -1599,7 +1629,8 @@ func (s *OrchestratorService) GetTaskStatus(ctx context.Context, req *pb.GetTask
 						zap.Int64("prompt_tokens", aggPromptTokens.Int64),
 						zap.Int64("completion_tokens", aggCompletionTokens.Int64),
 						zap.Int64("cache_read_tokens", aggCacheRead.Int64),
-						zap.Int64("cache_creation_tokens", aggCacheCreation.Int64))
+						zap.Int64("cache_creation_tokens", aggCacheCreation.Int64),
+						zap.Int64("cache_aware_total_tokens", aggCacheAware.Int64))
 					if aggCost.Valid && aggCost.Float64 > 0 {
 						taskExecution.TotalCostUSD = aggCost.Float64
 						dbTotalCost = aggCost.Float64
@@ -1621,6 +1652,14 @@ func (s *OrchestratorService) GetTaskStatus(ctx context.Context, req *pb.GetTask
 					}
 					if aggCacheCreation.Valid && aggCacheCreation.Int64 > 0 {
 						taskExecution.CacheCreationTokens = int(aggCacheCreation.Int64)
+					}
+					if aggCacheAware.Valid && aggCacheAware.Int64 > 0 {
+						taskExecution.CacheAwareTotalTokens = int(aggCacheAware.Int64)
+					} else {
+						// Defensive fallback if migration 121 has not yet been applied
+						// or the row predates it: recompute from the SUM parts.
+						taskExecution.CacheAwareTotalTokens = taskExecution.TotalTokens +
+							taskExecution.CacheReadTokens + taskExecution.CacheCreationTokens
 					}
 					// Mark that we have DB metrics available
 					if dbTotalTokens > 0 {
@@ -1767,9 +1806,19 @@ func (s *OrchestratorService) GetTaskStatus(ctx context.Context, req *pb.GetTask
 				zap.Error(err))
 		}
 
-		// Record token usage for enterprise quota tracking (fire-and-forget)
-		if tenantUUID != nil && taskExecution.TotalTokens > 0 && statusStr == "COMPLETED" {
-			s.RecordUsage(ctx, *tenantUUID, workflowID, int64(taskExecution.TotalTokens))
+		// Record token usage for enterprise quota tracking (fire-and-forget).
+		// Gate on CacheAwareTotalTokens so cache-only completions (which can
+		// have TotalTokens == 0 yet nonzero cache tokens) still register.
+		if tenantUUID != nil && taskExecution.CacheAwareTotalTokens > 0 && statusStr == "COMPLETED" {
+			s.RecordUsage(ctx, *tenantUUID, workflowID, RecordUsageDetails{
+				InputTokens:           int64(taskExecution.PromptTokens),
+				OutputTokens:          int64(taskExecution.CompletionTokens),
+				CacheReadTokens:       int64(taskExecution.CacheReadTokens),
+				CacheCreationTokens:   int64(taskExecution.CacheCreationTokens),
+				CacheAwareTotalTokens: int64(taskExecution.CacheAwareTotalTokens),
+				Model:                 taskExecution.ModelUsed,
+				Provider:              taskExecution.Provider,
+			})
 		}
 	}
 
@@ -3223,8 +3272,18 @@ func (s *OrchestratorService) RecordTokenUsage(
 		return &pb.RecordTokenUsageResponse{Success: true}, nil
 	}
 
-	totalTokens := int64(req.InputTokens) + int64(req.OutputTokens)
-	s.RecordUsage(ctx, tenantUUID, req.WorkflowId, totalTokens)
+	details := RecordUsageDetails{
+		InputTokens:           int64(req.InputTokens),
+		OutputTokens:          int64(req.OutputTokens),
+		CacheReadTokens:       int64(req.CacheReadTokens),
+		CacheCreationTokens:   int64(req.CacheCreationTokens),
+		CacheCreation1hTokens: int64(req.CacheCreation_1HTokens),
+		Model:                 req.Model,
+		Provider:              req.Provider,
+	}
+	details.CacheAwareTotalTokens = details.InputTokens + details.OutputTokens +
+		details.CacheReadTokens + details.CacheCreationTokens
+	s.RecordUsage(ctx, tenantUUID, req.WorkflowId, details)
 
 	return &pb.RecordTokenUsageResponse{Success: true}, nil
 }
