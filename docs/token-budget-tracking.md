@@ -887,3 +887,65 @@ err := workflow.ExecuteActivity(ctx,
     })
 ```
 3. Review budget manager logs: `grep "Budget exceeded"`
+
+---
+
+## Cache-Aware Token Accounting (migration 121)
+
+Shannon tracks **two parallel total-token fields**, persisted on both `token_usage` (per-LLM-call) and `task_executions` (per-workflow):
+
+| Field | Formula | Purpose |
+|-------|---------|---------|
+| `total_tokens` | `prompt_tokens + completion_tokens` | OpenAI-compatible API responses; response-shaped metadata |
+| `cache_aware_total_tokens` | `prompt + completion + cache_read + cache_creation` | Quota tracking, true cost, enterprise billing |
+
+The two are intentionally distinct: `total_tokens` keeps OpenAI semantics so existing SDK clients (and `usage.total_tokens` in `/v1/chat/completions` / `/v1/completions` responses) remain unchanged. `cache_aware_total_tokens` is the field enterprise quota counters should read.
+
+### Invariant
+
+For every row in either table:
+
+```
+cache_aware_total_tokens
+  == prompt_tokens + completion_tokens + cache_read_tokens + cache_creation_tokens
+```
+
+Run `scripts/verify_cache_quota_invariant.sh` to confirm. Empty output (per-row mismatch = 0, per-task mismatch = 0) means the invariant holds.
+
+### Write Paths
+
+There are **four** write paths to `token_usage`. All must populate `cache_aware_total_tokens`:
+
+| Path | File | Note |
+|------|------|------|
+| BudgetManager (orchestrated workflows) | `internal/budget/manager.go` `RecordUsage` / `storeUsage` | Computes `CacheAwareTotalTokens` immediately after `TotalTokens` |
+| Gateway completions proxy | `cmd/gateway/internal/openai/handler.go` `recordCompletionUsage` | `/v1/completions` bypasses the orchestrator — its INSERT computes the field inline |
+| Gateway tools proxy | `cmd/gateway/internal/handlers/tools.go` `recordToolUsage` | `/api/v1/tools/.../execute` direct INSERT — stores `tokens` under `completion_tokens` so the invariant holds without fabricating cache fields |
+| TaskExecution writer (rollup, separate table) | `internal/db/task_writer.go` | Writes the per-workflow rollup into `task_executions`; defensive recompute right before each `INSERT` so callers cannot drift |
+
+The zero-token guard in `internal/activities/budget.go` (`shouldRecordUsage`) admits pure cache hits: a call with `input + output == 0` but `cache_read > 0` or `cache_creation > 0` is recorded so prompt-cache cost still bills.
+
+### Read / Quota Paths Updated
+
+| Path | File | Behavior |
+|------|------|----------|
+| Workflow rollup SUM | `internal/server/service.go` (`getTaskMetadataFromDB`) | `SUM(cache_aware_total_tokens)` with parts-based fallback |
+| Per-agent breakdown | `internal/server/service.go` (`agent_usages`) | Emits `cache_aware_total_tokens` alongside `total_tokens` |
+| Usage report | `internal/budget/manager.go` `GetUsageReport` | `UsageReport.CacheAwareTotalTokens` populated; `ModelUsage.CacheAwareTokens` per model |
+| Session quota update | `internal/workflows/strategies/research.go` | `session.TokensUsed` reads `report.CacheAwareTotalTokens` (falls back to `TotalTokens` mid-migration) |
+| Session API (`tokens_used`) | `cmd/gateway/internal/handlers/session.go` | Both single-session and list endpoints SUM `cache_aware_total_tokens` |
+| Per-task in-memory metadata | `internal/metadata/aggregate.go` | Emits `meta["cache_aware_total_tokens"]` in addition to `total_tokens` |
+
+### gRPC Surface
+
+`RecordTokenUsageRequest` (proto tags 7-9) carries `cache_read_tokens`, `cache_creation_tokens`, `cache_creation_1h_tokens`. The `OrchestratorService.RecordUsage` hook takes a `RecordUsageDetails` struct with `CacheAwareTotalTokens` precomputed for enterprise overrides.
+
+### shannon-cloud Cherry-Pick Checklist
+
+After cherry-picking the `feat/cache-aware-quota-rollup` commits to `shannon-cloud`:
+
+1. Confirm `migrations/postgres/121_cache_aware_total_tokens.sql` is applied in production.
+2. In shannon-cloud's override of `OrchestratorService.RecordUsage`, switch the quota counter from any `tokensUsed`-style argument to `details.CacheAwareTotalTokens`.
+3. **Audit any cloud-side SQL** that reads `SUM(total_tokens)` / `tokens_used` / writes its own `token_usage` rows. Each occurrence is a candidate cache leak. The OSS audit found four write paths and six read paths (table above) — assume the cloud diff has the same shape.
+4. Run `scripts/verify_cache_quota_invariant.sh` against the production database — expect both mismatch counts to be 0.
+5. Watch quota dashboards: per-tenant token usage will jump (this is the leak finally being recorded — not a regression).
