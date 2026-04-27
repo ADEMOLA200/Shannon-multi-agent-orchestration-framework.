@@ -381,6 +381,9 @@ message RecordTokenUsageRequest {
   string provider = 4;
   int32 input_tokens = 5;
   int32 output_tokens = 6;
+  int32 cache_read_tokens = 7;
+  int32 cache_creation_tokens = 8;
+  int32 cache_creation_1h_tokens = 9;
 }
 
 message RecordTokenUsageResponse {

@@ -136,6 +136,10 @@ func AggregateAgentMetadata(agentResults []activities.AgentExecutionResult, synt
 		meta["output_tokens"] = totalOutputTokens
 		totalTokens := totalInputTokens + totalOutputTokens + synthesisTokens
 		meta["total_tokens"] = totalTokens
+		// cache_aware_total_tokens parallels total_tokens but adds prompt-cache
+		// classes for quota accounting (see migration 121). Synthesis tokens
+		// have no cache component so they only appear in the input+output sum.
+		meta["cache_aware_total_tokens"] = totalTokens + totalCacheRead + totalCacheCreation
 	} else if totalTokensUsed > 0 {
 		// Fallback: use TokensUsed when splits unavailable
 		// Estimate 60/40 split for input/output
@@ -143,6 +147,7 @@ func AggregateAgentMetadata(agentResults []activities.AgentExecutionResult, synt
 		meta["input_tokens"] = int(float64(totalTokensUsed) * 0.6)
 		meta["output_tokens"] = int(float64(totalTokensUsed) * 0.4)
 		meta["total_tokens"] = totalTokens
+		meta["cache_aware_total_tokens"] = totalTokens + totalCacheRead + totalCacheCreation
 	}
 
     // Do not set cost_usd here; server or workflow computes accurately from pricing

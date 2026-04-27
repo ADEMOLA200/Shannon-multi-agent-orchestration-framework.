@@ -414,13 +414,20 @@ func (h *ToolsHandler) recordToolUsage(
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Schema parity with BudgetManager's tool path (activities/budget.go: OutputTokens=syntheticTokens):
+	// store the synthetic token count under completion_tokens so the cache-aware
+	// invariant
+	//   cache_aware_total_tokens == prompt + completion + cache_read + cache_creation
+	// holds without requiring tools to fabricate cache fields.
 	_, err := h.db.ExecContext(ctx, `
 		INSERT INTO token_usage (
 			user_id, task_id, agent_id, provider, model,
-			prompt_tokens, completion_tokens, total_tokens, cost_usd
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			prompt_tokens, completion_tokens, total_tokens, cost_usd,
+			cache_read_tokens, cache_creation_tokens, cache_aware_total_tokens
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`, userID, nil, "tool_"+toolName, "shannon-tools", "tool_"+toolName,
-		0, 0, tokens, costUSD)
+		0, tokens, tokens, costUSD,
+		0, 0, tokens)
 	if err != nil {
 		h.logger.Warn("Failed to record tool token usage",
 			zap.String("request_id", requestID),

@@ -721,8 +721,11 @@ func (h *Handler) Completions(w http.ResponseWriter, r *http.Request) {
 	var llmResp llmCompletionResponse
 	if err := json.Unmarshal(respBody, &llmResp); err != nil {
 		h.logger.Warn("Failed to parse LLM completion response for usage", zap.Error(err))
-	} else if llmResp.Usage != nil && llmResp.Usage.TotalTokens > 0 {
-		// Fire-and-forget usage recording
+	} else if llmResp.Usage != nil && (llmResp.Usage.TotalTokens > 0 ||
+		llmResp.Usage.CacheReadTokens > 0 || llmResp.Usage.CacheCreationTokens > 0) {
+		// Fire-and-forget usage recording. Cache-only calls (TotalTokens == 0
+		// but cache_read or cache_creation > 0) must still record so the
+		// quota cost shows up.
 		go h.recordCompletionUsage(
 			userCtx.UserID, userCtx.TenantID, requestID,
 			llmResp.Provider, llmResp.Model, llmResp.Usage,
@@ -811,7 +814,8 @@ func (h *Handler) handleCompletionsStream(
 			Usage    *llmCompletionUsage `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(usageLine), &doneEvent); err == nil {
-			if doneEvent.Usage != nil && doneEvent.Usage.TotalTokens > 0 {
+			if doneEvent.Usage != nil && (doneEvent.Usage.TotalTokens > 0 ||
+				doneEvent.Usage.CacheReadTokens > 0 || doneEvent.Usage.CacheCreationTokens > 0) {
 				go h.recordCompletionUsage(
 					userCtx.UserID, userCtx.TenantID, requestID,
 					doneEvent.Provider, doneEvent.Model, doneEvent.Usage,
@@ -852,16 +856,20 @@ func (h *Handler) recordCompletionUsage(
 			zap.Error(err))
 	}
 
-	// Insert into token_usage (task_id=NULL for completions proxy)
+	// Insert into token_usage (task_id=NULL for completions proxy).
+	// cache_aware_total_tokens parallels total_tokens but adds prompt-cache
+	// classes for accurate quota accounting (see migration 121).
+	cacheAwareTotal := usage.InputTokens + usage.OutputTokens +
+		usage.CacheReadTokens + usage.CacheCreationTokens
 	_, err := h.db.ExecContext(ctx, `
 		INSERT INTO token_usage (
 			user_id, task_id, agent_id, provider, model,
 			prompt_tokens, completion_tokens, total_tokens, cost_usd,
-			cache_read_tokens, cache_creation_tokens
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			cache_read_tokens, cache_creation_tokens, cache_aware_total_tokens
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`, userID, nil, "completions-proxy", provider, model,
 		usage.InputTokens, usage.OutputTokens, usage.TotalTokens, usage.CostUSD,
-		usage.CacheReadTokens, usage.CacheCreationTokens)
+		usage.CacheReadTokens, usage.CacheCreationTokens, cacheAwareTotal)
 	if err != nil {
 		h.logger.Warn("Failed to record completion token usage",
 			zap.String("request_id", requestID),
