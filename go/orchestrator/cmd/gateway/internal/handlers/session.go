@@ -232,11 +232,34 @@ func (h *SessionHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 		taskCount = 0
 	}
 
-	// Try to get real-time token usage from Redis (if available)
-	// Session manager stores sessions as JSON values with SET, not as Redis hashes
-	// Note: Don't use session.TokensUsed - it's not reliably updated. Always get from Redis or task_executions.
+	// Prefer DB aggregate from task_executions when present: it sums
+	// cache_aware_total_tokens which reflects the true per-session cost
+	// (including prompt cache). Many workflows still feed pre-cache
+	// session.TokensUsed into Redis, so the DB is the only path that
+	// guarantees cache cost shows up here. Redis is used only as a
+	// fallback while a session has no completed task rows yet.
 	tokensUsed := 0
-	if h.redis != nil {
+	{
+		var aggregatedTokens int
+		if extID, ok := contextData["external_id"].(string); ok && extID != "" {
+			err = h.db.GetContext(ctx, &aggregatedTokens, `
+				SELECT COALESCE(SUM(cache_aware_total_tokens), 0)::int FROM task_executions
+				WHERE (session_id = $1 OR session_id = $2) AND user_id = $3 AND tenant_id = $4
+			`, session.ID, extID, userCtx.UserID.String(), userCtx.TenantID)
+		} else {
+			err = h.db.GetContext(ctx, &aggregatedTokens, `
+				SELECT COALESCE(SUM(cache_aware_total_tokens), 0)::int FROM task_executions
+				WHERE session_id = $1 AND user_id = $2 AND tenant_id = $3
+			`, session.ID, userCtx.UserID.String(), userCtx.TenantID)
+		}
+		if err == nil && aggregatedTokens > 0 {
+			tokensUsed = aggregatedTokens
+		}
+	}
+
+	// Fallback to Redis real-time counter when DB has no rows yet.
+	// Note: Don't use session.TokensUsed - it's not reliably updated.
+	if tokensUsed == 0 && h.redis != nil {
 		// Try both possible Redis keys: the input sessionID and any external_id
 		keysToTry := []string{fmt.Sprintf("session:%s", sessionID)}
 		if extID, ok := contextData["external_id"].(string); ok && extID != "" {
@@ -253,25 +276,6 @@ func (h *SessionHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-		}
-	}
-
-	// If still 0, aggregate from task_executions as fallback (most accurate source)
-	if tokensUsed == 0 {
-		var aggregatedTokens int
-		if extID, ok := contextData["external_id"].(string); ok && extID != "" {
-			err = h.db.GetContext(ctx, &aggregatedTokens, `
-				SELECT COALESCE(SUM(total_tokens), 0)::int FROM task_executions
-				WHERE (session_id = $1 OR session_id = $2) AND user_id = $3 AND tenant_id = $4
-			`, session.ID, extID, userCtx.UserID.String(), userCtx.TenantID)
-		} else {
-			err = h.db.GetContext(ctx, &aggregatedTokens, `
-				SELECT COALESCE(SUM(total_tokens), 0)::int FROM task_executions
-				WHERE session_id = $1 AND user_id = $2 AND tenant_id = $3
-			`, session.ID, userCtx.UserID.String(), userCtx.TenantID)
-		}
-		if err == nil && aggregatedTokens > 0 {
-			tokensUsed = aggregatedTokens
 		}
 	}
 
@@ -916,7 +920,8 @@ func (h *SessionHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 
 	// Query sessions for this user
 	// Note: task_executions.session_id is VARCHAR, sessions.id is UUID - match by id or external_id
-	// Aggregate tokens_used from task_executions (more accurate than sessions.tokens_used which may not be updated)
+	// Aggregate tokens_used from task_executions (more accurate than sessions.tokens_used which may not be updated).
+	// cache_aware_total_tokens (migration 121) reflects true cost incl. prompt cache.
 	rows, err := h.db.QueryxContext(ctx, `
         SELECT
             s.id,
@@ -924,7 +929,7 @@ func (h *SessionHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
             COALESCE(s.context->>'title', '') as title,
             s.context as context,
             COALESCE(s.token_budget, 0) as token_budget,
-            COALESCE(SUM(t.total_tokens), 0)::int as tokens_used,
+            COALESCE(SUM(t.cache_aware_total_tokens), 0)::int as tokens_used,
             s.created_at,
             s.updated_at,
             s.expires_at,
